@@ -60,6 +60,62 @@ class ImmichClient:
 
     # ---- schema verification ---------------------------------------------
 
+    # A UUID that cannot exist, for probing paths that take an id.
+    _NIL_ID = "00000000-0000-0000-0000-000000000000"
+
+    def _probe_endpoints(self) -> list[str]:
+        """Check each configured endpoint exists, without an OpenAPI document.
+
+        Immich stopped publishing a spec under /api on some builds (3.1.0 has
+        none), so the spec check cannot be the only check.
+
+        Every probe is sent **unauthenticated, on purpose**. An existing route
+        answers 401/403, a missing one answers 404, and that is all we need —
+        while guaranteeing that probing a write endpoint cannot write anything.
+        Sending these with the API key attached would create a real album every
+        time someone ran --check-api.
+        """
+        problems: list[str] = []
+        for label, path, method in (
+            ("api.search_assets", self.cfg.search_assets, "POST"),
+            ("api.create_album", self.cfg.create_album, "POST"),
+            ("api.update_album", self.cfg.update_album, "PATCH"),
+            ("api.add_album_assets", self.cfg.add_album_assets, "PUT"),
+        ):
+            url = self.base + path.replace("{id}", self._NIL_ID)
+            try:
+                # Bare requests, not self.session: the session carries the key.
+                resp = requests.request(
+                    method, url, timeout=self.cfg.timeout_seconds,
+                    headers={"Accept": "application/json"}, json={},
+                )
+            except requests.RequestException as e:
+                problems.append(f"{label}: {path} unreachable: {e}")
+                continue
+
+            if resp.status_code == 404:
+                problems.append(
+                    f"{label}: {path} returns 404 on this instance — the path "
+                    f"has moved. Fix it under `api:` in config.yaml."
+                )
+            elif resp.status_code in (401, 403):
+                continue                      # exists, correctly refused
+            elif resp.status_code < 400:
+                # An unauthenticated write succeeded. Never treat that as a
+                # pass — the instance is open to anyone on the network.
+                problems.append(
+                    f"{label}: {method} {path} succeeded WITHOUT credentials "
+                    f"({resp.status_code}). This instance is not requiring "
+                    f"authentication; do not run --apply against it."
+                )
+            elif resp.status_code == 405:
+                problems.append(
+                    f"{label}: {path} exists but rejects {method} (405)"
+                )
+            # Anything else (400, 422, 5xx) means the route is there and took
+            # the request far enough to complain about it. Good enough.
+        return problems
+
     def verify_spec(self) -> list[str]:
         """Compare configured endpoints against the live OpenAPI document.
 
@@ -69,15 +125,15 @@ class ImmichClient:
         try:
             spec = self._request("GET", self.cfg.openapi_spec)
         except ImmichError as e:
-            return [
-                f"could not fetch OpenAPI spec at {self.cfg.openapi_spec}: {e}. "
-                "Find the right path (try /api/specs-json or the docs page) and "
-                "set api.openapi_spec in config.yaml."
-            ]
+            log.info("no OpenAPI spec at %s (%s); probing endpoints instead",
+                     self.cfg.openapi_spec, e)
+            return self._probe_endpoints()
 
         paths: dict = spec.get("paths", {}) if isinstance(spec, dict) else {}
         if not paths:
-            return [f"OpenAPI document at {self.cfg.openapi_spec} has no 'paths'"]
+            log.info("OpenAPI document at %s has no 'paths'; probing instead",
+                     self.cfg.openapi_spec)
+            return self._probe_endpoints()
 
         # Normalise both sides: our {id} vs the spec's {albumId} etc.
         def norm(p: str) -> str:

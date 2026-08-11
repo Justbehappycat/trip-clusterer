@@ -9,6 +9,7 @@ server that responds in the documented shape.
 from __future__ import annotations
 
 import json
+import re
 import sys
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -34,9 +35,36 @@ SPEC = {
 class Stub(BaseHTTPRequestHandler):
     calls: list[tuple[str, str, dict]] = []
     pages = 2
+    # Real Immich refuses unauthenticated writes, and the endpoint probe in
+    # verify_spec depends on that: 401 means the route exists, 404 means it
+    # doesn't. Set False to simulate an instance with auth switched off.
+    require_auth = True
 
     def log_message(self, *a):  # keep pytest output clean
         pass
+
+    # Real Immich resolves the route *before* authenticating: an unknown path
+    # is 404 even without credentials, a known one is 401. The endpoint probe
+    # depends on that ordering, so the stub has to reproduce it.
+    ROUTES = {
+        "POST":  (r"^/api/search/metadata$", r"^/api/albums$"),
+        "PUT":   (r"^/api/albums/[^/]+/assets$",),
+        "PATCH": (r"^/api/albums/[^/]+$",),
+    }
+
+    def _routed(self, method: str) -> bool:
+        if any(re.match(p, self.path) for p in Stub.ROUTES.get(method, ())):
+            return True
+        self._send({"error": "not found"}, 404)
+        return False
+
+    def _authed(self) -> bool:
+        if not Stub.require_auth:
+            return True
+        if self.headers.get("x-api-key") == "test-key":
+            return True
+        self._send({"error": "unauthorized"}, 401)
+        return False
 
     def _body(self) -> dict:
         n = int(self.headers.get("Content-Length") or 0)
@@ -58,6 +86,8 @@ class Stub(BaseHTTPRequestHandler):
         self._send({"error": "not found"}, 404)
 
     def do_POST(self):
+        if not self._routed("POST") or not self._authed():
+            return
         body = self._body()
         Stub.calls.append(("POST", self.path, body))
         if self.path == "/api/search/metadata":
@@ -83,11 +113,15 @@ class Stub(BaseHTTPRequestHandler):
         self._send({"error": "not found"}, 404)
 
     def do_PUT(self):
+        if not self._routed("PUT") or not self._authed():
+            return
         body = self._body()
         Stub.calls.append(("PUT", self.path, body))
         self._send([{"id": i, "success": True} for i in body.get("ids", [])])
 
     def do_PATCH(self):
+        if not self._routed("PATCH") or not self._authed():
+            return
         Stub.calls.append(("PATCH", self.path, self._body()))
         self._send({"id": "album-abc"})
 
@@ -96,6 +130,7 @@ class Stub(BaseHTTPRequestHandler):
 def server():
     Stub.calls = []
     Stub.pages = 2
+    Stub.require_auth = True
     httpd = HTTPServer(("127.0.0.1", 0), Stub)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
@@ -132,11 +167,44 @@ def test_spec_check_reports_a_missing_method(server):
     assert any("no PUT" in p for p in problems)
 
 
-def test_spec_check_survives_an_unreachable_spec(server):
+def test_no_spec_falls_back_to_probing_endpoints(server):
+    """Immich 3.1.0 publishes no OpenAPI document under /api.
+
+    A missing spec used to be reported as the single problem, which made
+    --check-api useless on exactly the instances it needed to verify. It now
+    probes each configured endpoint instead: correct paths answer 401, so an
+    instance with no spec and correct paths is clean.
+    """
     cfg = ApiConfig(base_url=server, key="test-key", openapi_spec="/api/nope")
+    assert ImmichClient(cfg).verify_spec() == []
+
+
+def test_probe_reports_a_moved_endpoint_without_a_spec(server):
+    cfg = ApiConfig(base_url=server, key="test-key", openapi_spec="/api/nope",
+                    search_assets="/api/search/moved")
     problems = ImmichClient(cfg).verify_spec()
     assert len(problems) == 1
-    assert "could not fetch OpenAPI spec" in problems[0]
+    assert "404" in problems[0] and "api.search_assets" in problems[0]
+
+
+def test_probe_does_not_authenticate(server):
+    """The probe must not carry the API key.
+
+    POST /api/albums with credentials creates an album. If the probe ever
+    authenticates, every --check-api run litters the library with empty
+    albums, so assert the stub saw no authenticated write.
+    """
+    cfg = ApiConfig(base_url=server, key="test-key", openapi_spec="/api/nope")
+    ImmichClient(cfg).verify_spec()
+    assert Stub.calls == []
+
+
+def test_probe_flags_an_instance_that_allows_unauthenticated_writes(server):
+    """An open instance must fail the check, not quietly pass it."""
+    Stub.require_auth = False
+    cfg = ApiConfig(base_url=server, key="test-key", openapi_spec="/api/nope")
+    problems = ImmichClient(cfg).verify_spec()
+    assert problems and all("WITHOUT credentials" in p for p in problems)
 
 
 def test_pagination_stops_at_the_last_page(client):

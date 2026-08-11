@@ -12,26 +12,53 @@ file is the state of the build.
 
 ## Where the build stands
 
+**Immich runs on the Synology at `192.168.1.218:2283`, not the Mac Mini.** The
+plan's "Mac Mini runs Immich + a slideshow renderer" is superseded. The Mini's
+remaining role is undecided — immich-kiosk is itself a container and could sit
+next to Immich on the Synology, in which case the Mini is not in the
+architecture at all.
+
 | Phase | Status |
 |---|---|
-| 1 — Immich on the Mini | not started |
-| 2 — Photo import, GPS verified | not started |
+| 1 — Immich on the Synology | **done** — v3.1.0 |
+| 2 — Photo import, GPS verified | **in progress** — iPhone backing up, ~16K assets and climbing; GPS coverage not yet verified |
 | 3 — Trip clusterer | **built, tested against synthetic data only** |
 | 4 — immich-kiosk slideshow | not started |
 | 5 — Windows kiosk hardening | not started |
 | 6 — Touch handoff wrapper page | not started |
 
-Phase 3 was developed on a MacBook Pro, not the Mini. It has **never talked to a
-real Immich instance**. The endpoint paths, the response shapes in
-`immich.py:parse_asset`, and the whole `--apply` path are verified only against
-the stub server in `tests/test_immich.py`.
+Phase 3 was developed on a MacBook Pro. The **endpoint paths are now confirmed
+against the live 3.1.0 instance** — all four exist. `parse_asset`'s response
+shapes and the whole `--apply` path are still verified only against the stub
+server in `tests/test_immich.py`.
 
-Before the first real run, in this order:
+**Immich 3.1.0 publishes no OpenAPI document under `/api`.** Every candidate
+path 404s (`/api/docs-json`, `/api/spec-json`, `/api/specs-json`,
+`/api/swagger-json`, `/api/openapi.json`); `/openapi.json` returns 200 but it is
+the web app's HTML catch-all, not a spec. So `verify_spec` falls back to
+probing each configured endpoint. The probes go out **unauthenticated on
+purpose**: Immich resolves the route before authenticating, so a live path
+answers 401 and a moved one answers 404 — and an unauthenticated `POST
+/api/albums` cannot create anything. Never make the probe send the API key;
+`--check-api` would then litter the library with empty albums on every run.
 
-1. `--check-api` against the live instance; fix any paths it reports.
-2. `tools/find_home.py` to get real home coordinates into `config.yaml`.
-3. Dry runs until the albums look right. Expect two or three rounds.
-4. Only then `--apply`.
+Confirmed present on 3.1.0: `POST /api/search/metadata`, `POST /api/albums`,
+`PATCH /api/albums/{id}`, `PUT /api/albums/{id}/assets`.
+
+`/api/server/features` reports `smartSearch`, `facialRecognition`,
+`duplicateDetection`, `map` and `reverseGeocoding` all true — the ML needed to
+filter people out of the slideshow is available.
+
+Remaining before the first real run, in this order:
+
+1. Let the iPhone backup finish. Trip boundaries and `find_home.py`'s density
+   estimate both shift while assets are still arriving.
+2. Verify GPS coverage across the library. If location is being stripped,
+   `segment_trips` silently filters everything out and returns zero trips —
+   there is no error to notice.
+3. `tools/find_home.py` to get real home coordinates into `config.yaml`.
+4. Dry runs until the albums look right. Expect two or three rounds.
+5. Only then `--apply`.
 
 ## Open defects
 
