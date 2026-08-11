@@ -24,7 +24,12 @@ class Thresholds:
     stop_gap_hours: float = 30.0
 
     # Leg classification
-    flight_min_speed_kmh: float = 300.0
+    # 150, not 300: implied speed is measured stop-end to stop-start, so it is
+    # always an underestimate of true travel speed. At 300 nothing short of a
+    # photo taken on the runway reads as a flight. 150 catches the moderate-gap
+    # case; it cannot catch a long gap (see the caveat in README.md), and no
+    # value can, because a wide enough gap drags a flight into the driving band.
+    flight_min_speed_kmh: float = 150.0
     drive_min_speed_kmh: float = 40.0
     drive_max_speed_kmh: float = 150.0
     long_haul_min_km: float = 100.0

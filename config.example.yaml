@@ -48,8 +48,13 @@ thresholds:
   # and split a multi-day stay in one city into one stop per day.
   stop_gap_hours: 30.0
 
-  # Leg classification by implied speed between consecutive stops
-  flight_min_speed_kmh: 300.0
+  # Leg classification by implied speed between consecutive stops.
+  # Implied speed always understates true travel speed, because the measurement
+  # runs from one stop's last photo to the next stop's first photo and so
+  # absorbs airport time. 150 is the practical floor: it equals
+  # drive_max_speed_kmh, so anything faster than a car can sustain is a flight.
+  # See the caveat in README.md for what this still misses.
+  flight_min_speed_kmh: 150.0
   drive_min_speed_kmh: 40.0
   drive_max_speed_kmh: 150.0
   long_haul_min_km: 100.0

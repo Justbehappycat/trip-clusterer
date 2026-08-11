@@ -79,22 +79,40 @@ All in `config.yaml`. Starting points, not answers.
 | `max_gap_hours` (36) | A longer gap between away photos splits one trip into two. The single biggest lever on results. |
 | `min_duration_days` (2), `min_photos` (10) | Reject day trips and thin runs. |
 | `stop_gap_hours` (30) | Deliberately higher than the plan's 12. At 12, an overnight with no photos splits a four-day stay in one city into four separate stops, and the description reads as a list of days rather than places. |
-| `flight_min_speed_kmh` (300) | See the caveat below. |
+| `flight_min_speed_kmh` (150) | Above this implied speed a leg is a flight. Lowered from 300; see the caveat below for what it still misses. |
 | `road_trip_min_ground_fraction` (1.0) | Share of long-haul km that must be on the ground. 1.0 is the strict "no flights" rule; ~0.5 also admits fly-out-then-drive trips. |
 
 ### Caveat: implied speed is a weak flight detector
 
 Leg speed is measured from one stop's last photo to the next stop's first
 photo, so it includes airport time and any stretch where nobody shot anything.
-A real Seattle→Denver flight with a 15-hour photo gap implies ~110 km/h, which
-reads as driving at any threshold you'd want to set — lowering
-`flight_min_speed_kmh` to 150 does not fix it. `tests/test_cluster.py` pins this
-behaviour so it can't regress silently.
+It therefore always *understates* how fast you were really moving, and how much
+it understates depends entirely on when you happened to take pictures.
 
-If misclassified road trips turn out to matter, the discriminator that actually
-works is route evidence rather than speed: a 1,600 km drive leaves photos at
-intermediate points, a flight leaves none. That's a design change, not a
-threshold change.
+How far the same Seattle→Denver flight (~1,640 km) drifts with the photo gap:
+
+| Photo gap | Implied speed | At 300 (old) | At 150 (current) |
+|---|---|---|---|
+| 7 h | ~234 km/h | `ground` → road trip ✗ | `flight` ✓ |
+| 15 h | ~109 km/h | `driving` → road trip ✗ | `driving` → road trip ✗ |
+
+150 is the practical floor for the threshold: it equals `drive_max_speed_kmh`,
+so it already flags anything faster than a car sustains. Going lower would
+start calling genuine road trips flights, which is strictly worse. **The wide-gap
+case is a known miss, not a bug to be tuned away** —
+`test_wide_photo_gap_flight_is_a_known_miss_at_any_threshold` pins it so its
+status stays visible.
+
+Route evidence is the usual suggested fix — a long drive leaves photos at
+intermediate points, a flight leaves none — but note what it can and cannot do
+here. An en-route photo does not sit *inside* a leg: `cluster_stops` files every
+GPS-fixed photo into a stop, so an intermediate photo **splits the leg in two**.
+A drive with en-route photos is therefore already classified correctly, as a
+chain of short legs, without consulting speed at all. The legs that reach the
+speed test are exactly the ones with no intermediate photos to consult. Any real
+improvement has to come from evidence other than the photo track — timezone
+shifts across the leg are the most promising, since a flight usually crosses one
+and the EXIF offset is already parsed into `Asset.tz_offset_min`.
 
 ## Weekly run
 

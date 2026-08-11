@@ -180,27 +180,56 @@ def test_flight_leg_detected_by_implied_speed():
     assert classify_trip(legs, TH) == "trip"
 
 
-def test_flight_threshold_is_sensitive_to_photo_gaps():
-    """A real flight can read as ground travel at the default 300 km/h.
+def test_moderate_photo_gap_flight_is_caught_at_the_default():
+    """Seattle -> Denver with a 7-hour photo gap: ~234 km/h implied.
 
-    Implied speed is measured stop-end to stop-start, so it includes airport
-    time and any stretch where nobody took a photo. Seattle -> Denver with a
-    7-hour photo gap implies only ~234 km/h. Nothing on the ground sustains
-    that over 1600 km, which is why flight_min_speed_kmh is tunable and why
-    150 is the more defensible setting.
+    Implied speed is measured stop-end to stop-start, so it absorbs airport
+    time and understates the real pace. At the old 300 km/h default this leg
+    read as ground travel and the trip as a road trip. Nothing on the ground
+    sustains 234 km/h over 1600 km, and the 150 default now catches it.
     """
     assets = track(SEATTLE, ts(2023, 6, 1, 6), 6, spacing_h=1) + track(
         DENVER, ts(2023, 6, 1, 18), 6, spacing_h=1, prefix="b"
     )
     trip = Trip(assets=assets)
     trip.stops = cluster_stops(trip, TH)
+    legs = classify_legs(trip.stops, TH)
 
-    assert classify_legs(trip.stops, TH)[0].kind == "ground"
-    assert classify_trip(classify_legs(trip.stops, TH), TH) == "road_trip"
+    assert 200 < legs[0].implied_speed_kmh < 260
+    assert legs[0].kind == "flight"
+    assert classify_trip(legs, TH) == "trip"
 
-    strict = Thresholds(flight_min_speed_kmh=150.0)
-    assert classify_legs(trip.stops, strict)[0].kind == "flight"
-    assert classify_trip(classify_legs(trip.stops, strict), strict) == "trip"
+    # The old default is what made this a road trip. Kept so the regression
+    # can't come back by someone restoring 300 without reading why.
+    lax = Thresholds(flight_min_speed_kmh=300.0)
+    assert classify_legs(trip.stops, lax)[0].kind == "ground"
+    assert classify_trip(classify_legs(trip.stops, lax), lax) == "road_trip"
+
+
+def test_wide_photo_gap_flight_is_a_known_miss_at_any_threshold():
+    """The case no threshold fixes — pinned as a known limitation, not a goal.
+
+    Same Seattle -> Denver flight, but nobody shoots for 15 hours around it.
+    That implies ~109 km/h, which is an ordinary driving pace: the leg is
+    indistinguishable from a real long drive on speed alone. Catching it would
+    mean setting the flight cutoff below 109, which would reclassify genuine
+    road trips as flights — strictly worse.
+
+    Fixing this needs evidence other than speed. Note that route evidence, the
+    obvious candidate, does not help *here*: an en-route photo does not sit
+    inside a leg, it splits the leg in two (see the drive tests above), so a
+    two-stop trip like this one offers nothing to consult.
+    """
+    assets = track(SEATTLE, ts(2023, 6, 1, 6), 6, spacing_h=1) + track(
+        DENVER, ts(2023, 6, 2, 2), 6, spacing_h=1, prefix="b"
+    )
+    trip = Trip(assets=assets)
+    trip.stops = cluster_stops(trip, TH)
+    legs = classify_legs(trip.stops, TH)
+
+    assert 90 < legs[0].implied_speed_kmh < 130
+    assert legs[0].kind == "driving"          # wrong, and knowingly so
+    assert classify_trip(legs, TH) == "road_trip"
 
 
 def test_driving_pace_reads_as_a_road_trip():

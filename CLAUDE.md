@@ -35,14 +35,36 @@ Before the first real run, in this order:
 
 ## Open defects
 
-**Flights between two away stops classify as ground travel.** Leg speed is
-measured last-photo-of-one-stop to first-photo-of-the-next, so it absorbs
-airport time. The fixture's Seattle→Denver flight implies ~110 km/h and the trip
-is labelled a road trip. No threshold fixes this — 150 km/h was tested and
-doesn't. The fix is to replace implied speed in `cluster.classify_legs` with
-route evidence: a long drive leaves photos at intermediate points, a flight
-leaves none. `tests/test_cluster.py::test_flight_threshold_is_sensitive_to_photo_gaps`
-pins the current behaviour so it can't drift silently.
+**Flights between two away stops can still classify as ground travel — partly
+fixed.** Leg speed is measured last-photo-of-one-stop to first-photo-of-the-next,
+so it absorbs airport time and understates the real pace by however long nobody
+was shooting.
+
+`flight_min_speed_kmh` now defaults to **150**, not 300. That fixes the
+moderate-gap case (7-hour gap, ~234 km/h implied, previously a road trip) and
+breaks nothing else in the suite. It does **not** fix the wide-gap case: a
+15-hour gap implies ~109 km/h, an ordinary driving pace, and no threshold
+recovers it — going below 109 would start calling real road trips flights. 150
+is the floor, since it already equals `drive_max_speed_kmh`.
+
+Both cases are pinned in `tests/test_cluster.py`:
+`test_moderate_photo_gap_flight_is_caught_at_the_default` (fixed, also guards
+against someone restoring 300) and
+`test_wide_photo_gap_flight_is_a_known_miss_at_any_threshold` (deliberately
+asserts the wrong answer, so the limitation stays visible).
+
+Route evidence — the fix this note used to call for — turns out not to apply.
+An en-route photo doesn't sit *inside* a leg: `cluster_stops` files every
+GPS-fixed photo into a stop, so an intermediate photo **splits the leg in two**.
+A drive with en-route photos already classifies correctly as a chain of short
+legs. The legs that reach the speed test are precisely the ones with no
+intermediate photos to consult, so there is nothing there to look at. The next
+candidate is `Asset.tz_offset_min`: a flight usually crosses a timezone, a drive
+of the same length usually doesn't, and the EXIF offset is already parsed.
+
+All of this is measured against synthetic fixtures only. Whether the wide-gap
+miss matters at all depends on how often it happens in the real library —
+settle that with dry runs after Phase 2, not by tuning further now.
 
 ## Deliberate deviations from the plan
 
