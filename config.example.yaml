@@ -3,11 +3,35 @@
 #
 #   cp config.example.yaml config.yaml
 
-# Photos within `home_radius_km` of this point are "not a trip".
-# Use tools/find_home.py to derive it from your own library.
+# Photos within `home_radius_km` of a home are "not a trip".
+# Use tools/find_home.py to derive these from your own library — it ranks
+# candidates by distinct days and breaks them down by year, which is how you
+# spot a house move (one row goes quiet as another lights up) or a second home
+# (two rows busy across the same years).
 home:
   lat: 0.0
   lon: 0.0
+
+# If you have more than one home, or moved house, use `homes:` instead of
+# `home:` — a single fixed point makes ordinary life at the other address
+# cluster and get named as a trip. A photo counts as away only when it is far
+# from *every* home in effect on the day it was taken.
+#
+# `from` is inclusive, `until` is exclusive, both YYYY-MM-DD; omit either side
+# for unbounded. A home with neither is always in effect.
+#
+# homes:
+#   - lat: 33.7879
+#     lon: -117.8531
+#     label: Orange
+#     until: 2024-06-01
+#   - lat: 34.0522
+#     lon: -118.2437
+#     label: Los Angeles
+#     from: 2024-06-01
+#   - lat: 38.9140          # second home, concurrent with the above
+#     lon: 121.6147
+#     label: Dalian
 
 state_db: trips.db
 

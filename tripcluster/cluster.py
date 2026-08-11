@@ -9,20 +9,55 @@ from __future__ import annotations
 
 from .config import Thresholds
 from .geo import centroid, haversine_km
-from .model import Asset, Leg, Stop, Trip
+from .model import Asset, Home, Leg, Stop, Trip
 
 
-def segment_trips(assets: list[Asset], home: tuple[float, float], th: Thresholds) -> list[Trip]:
+HomeSpec = "tuple[float, float] | Home | list[Home]"
+
+
+def as_homes(home) -> list[Home]:
+    """Accept a bare (lat, lon), one Home, or a list — always return a list.
+
+    Callers and tests predate multi-home support and pass a plain tuple; that
+    keeps working and simply means one home, always in effect.
+    """
+    if isinstance(home, Home):
+        return [home]
+    if isinstance(home, (list, tuple)) and home and isinstance(home[0], Home):
+        return list(home)
+    lat, lon = home                      # bare (lat, lon)
+    return [Home(lat=lat, lon=lon)]
+
+
+def is_away(a: Asset, homes: list[Home], radius_km: float) -> bool:
+    """True when a photo is outside every home in effect at the time it was taken.
+
+    Homes whose date range excludes the photo are ignored, so a house move
+    doesn't retroactively make the old address count as travel — or the new
+    one, before you lived there.
+    """
+    active = [h for h in homes if h.covers(a.ts_utc)] or homes
+    return all(
+        haversine_km(a.lat, a.lon, h.lat, h.lon) > radius_km for h in active
+    )
+
+
+def segment_trips(assets: list[Asset], home: HomeSpec, th: Thresholds) -> list[Trip]:
     """Split a time-sorted asset list into candidate trips.
 
     A trip is a contiguous run of "away from home" photos with no internal gap
     longer than ``max_gap_hours``. Photos taken at home neither join nor split a
     run — in practice a pass through home shows up as a time gap anyway.
+
+    ``home`` may be a bare (lat, lon), a single :class:`Home`, or a list of
+    them. A photo counts as away only if it is far from *every* home that was
+    in effect when it was taken.
     """
+    homes = as_homes(home)
     away = [
         a
         for a in assets
-        if a.has_fix and haversine_km(a.lat, a.lon, home[0], home[1]) > th.home_radius_km
+        if a.has_fix and is_away(a, homes, th.home_radius_km)
     ]
     if not away:
         return []
@@ -158,7 +193,7 @@ def classify_trip(legs: list[Leg], th: Thresholds) -> str:
     return "road_trip" if (ground / total) >= th.road_trip_min_ground_fraction else "trip"
 
 
-def build_trips(assets: list[Asset], home: tuple[float, float], th: Thresholds) -> list[Trip]:
+def build_trips(assets: list[Asset], home: HomeSpec, th: Thresholds) -> list[Trip]:
     """Full pipeline: segment, cluster stops, classify legs and trip kind."""
     trips = segment_trips(assets, home, th)
     for trip in trips:

@@ -35,6 +35,33 @@ class Asset:
 
 
 @dataclass
+class Home:
+    """One place that counts as "not travelling", optionally time-bounded.
+
+    A single fixed point cannot describe a real life: people move house, and
+    plenty of people have two homes at once. Both cases produce the same
+    symptom — ordinary life at the unmodelled home is clustered and named as
+    a trip.
+
+    ``from_utc``/``until_utc`` are inclusive-exclusive epoch bounds; None means
+    unbounded on that side, so a home with neither is always in effect.
+    """
+
+    lat: float
+    lon: float
+    label: str = ""
+    from_utc: int | None = None
+    until_utc: int | None = None
+
+    def covers(self, ts_utc: int) -> bool:
+        if self.from_utc is not None and ts_utc < self.from_utc:
+            return False
+        if self.until_utc is not None and ts_utc >= self.until_utc:
+            return False
+        return True
+
+
+@dataclass
 class Stop:
     """A cluster of photos in one place, within one trip."""
 

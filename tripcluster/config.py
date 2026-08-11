@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, fields
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 import yaml
+
+from .model import Home
 
 
 @dataclass
@@ -75,10 +78,80 @@ class Config:
     state_db: Path
     geocoder: str = "offline"        # "offline" (reverse_geocoder) | "none"
     album_prefix: str = ""
+    # Every home, in config order. A single `home:` becomes a one-element list,
+    # so downstream code only ever deals with the list form.
+    homes: list = None               # list[Home]; defaulted in __post_init__
+
+    def __post_init__(self) -> None:
+        if not self.homes:
+            self.homes = [Home(lat=self.home_lat, lon=self.home_lon)]
 
     @property
-    def home(self) -> tuple[float, float]:
-        return (self.home_lat, self.home_lon)
+    def home(self):
+        """What segment_trips should measure against.
+
+        Returns the full home list. A bare (lat, lon) still works downstream —
+        cluster.as_homes normalises either form — but callers that want the
+        primary point should use home_lat/home_lon.
+        """
+        return self.homes
+
+
+def _epoch(value, field: str, path) -> int | None:
+    """YYYY-MM-DD (or a YAML date) to epoch seconds, UTC midnight."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return int(value.replace(tzinfo=value.tzinfo or timezone.utc).timestamp())
+    if isinstance(value, date):
+        return int(datetime(value.year, value.month, value.day,
+                            tzinfo=timezone.utc).timestamp())
+    try:
+        d = datetime.strptime(str(value), "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    except ValueError:
+        raise ValueError(
+            f"{path}: {field} must be YYYY-MM-DD, got {value!r}"
+        ) from None
+    return int(d.timestamp())
+
+
+def _parse_homes(raw: dict, path) -> list[Home]:
+    """Read `homes:` (a list) or `home:` (a single mapping). At least one required.
+
+    Both forms are supported because a single fixed home is the common case and
+    was the original schema; `homes:` exists for people who moved house or keep
+    a second home, where one point makes ordinary life look like travel.
+    """
+    entries = raw.get("homes")
+    if entries is None:
+        single = raw.get("home")
+        if not single:
+            raise ValueError(
+                f"{path}: either `home:` (lat/lon) or `homes:` (a list) is required"
+            )
+        entries = [single]
+    if not isinstance(entries, list) or not entries:
+        raise ValueError(f"{path}: `homes:` must be a non-empty list")
+
+    out: list[Home] = []
+    for i, e in enumerate(entries):
+        if not isinstance(e, dict) or "lat" not in e or "lon" not in e:
+            raise ValueError(f"{path}: homes[{i}] needs lat and lon")
+        unknown = set(e) - {"lat", "lon", "label", "from", "until"}
+        if unknown:
+            raise ValueError(f"{path}: homes[{i}] has unknown keys {sorted(unknown)}")
+        h = Home(
+            lat=float(e["lat"]),
+            lon=float(e["lon"]),
+            label=str(e.get("label", "")),
+            from_utc=_epoch(e.get("from"), f"homes[{i}].from", path),
+            until_utc=_epoch(e.get("until"), f"homes[{i}].until", path),
+        )
+        if (h.from_utc is not None and h.until_utc is not None
+                and h.from_utc >= h.until_utc):
+            raise ValueError(f"{path}: homes[{i}] has from >= until")
+        out.append(h)
+    return out
 
 
 def _subset(cls, data: dict):
@@ -94,9 +167,8 @@ def load_config(path: str | Path) -> Config:
     path = Path(path).expanduser()
     raw = yaml.safe_load(path.read_text()) or {}
 
-    home = raw.get("home") or {}
-    if "lat" not in home or "lon" not in home:
-        raise ValueError(f"{path}: home.lat and home.lon are required")
+    homes = _parse_homes(raw, path)
+    home = {"lat": homes[0].lat, "lon": homes[0].lon}
 
     api = _subset(ApiConfig, raw.get("api", {}))
     # The API key lives in the environment so config.yaml stays committable.
@@ -115,4 +187,5 @@ def load_config(path: str | Path) -> Config:
         state_db=state_db,
         geocoder=raw.get("geocoder", "offline"),
         album_prefix=raw.get("album_prefix", ""),
+        homes=homes,
     )

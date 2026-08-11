@@ -18,7 +18,7 @@ from tripcluster.cluster import (  # noqa: E402
 )
 from tripcluster.config import Thresholds  # noqa: E402
 from tripcluster.geo import centroid, haversine_km, interpolate_missing_gps  # noqa: E402
-from tripcluster.model import Asset, Trip  # noqa: E402
+from tripcluster.model import Asset, Home, Trip  # noqa: E402
 from tripcluster.naming import describe, heuristic_name  # noqa: E402
 from tripcluster.store import Store  # noqa: E402
 
@@ -163,6 +163,63 @@ def test_inferred_coordinates_do_not_move_the_centroid():
     assert len(stops) == 1
     assert "bad" in stops[0].asset_ids          # still filed under the stop
     assert haversine_km(stops[0].lat, stops[0].lon, *VEGAS) < 3   # but not steering it
+
+
+# ---- multiple and time-bounded homes --------------------------------------
+
+DALIAN = (38.9140, 121.6147)
+
+
+def test_a_second_home_is_not_a_trip():
+    """Two homes at once: a stay at either is ordinary life, not travel.
+
+    With a single home point, every stay at the other one clusters and gets
+    named as a trip — the symptom that made months of Dalian albums appear
+    alongside real travel.
+    """
+    assets = track(DALIAN, ts(2025, 1, 24), 40, spacing_h=4)
+    one_home = segment_trips(assets, HOME, TH)
+    assert one_home, "sanity: with only LA as home this looks like a trip"
+
+    both = [Home(lat=HOME[0], lon=HOME[1]), Home(lat=DALIAN[0], lon=DALIAN[1])]
+    assert segment_trips(assets, both, TH) == []
+
+
+def test_moving_house_does_not_make_the_old_address_travel():
+    """Homes are time-bounded, so each era is judged against its own home."""
+    orange = (33.7879, -117.8531)
+    moved = ts(2025, 1, 1)
+    homes = [
+        Home(lat=orange[0], lon=orange[1], label="Orange", until_utc=moved),
+        Home(lat=HOME[0], lon=HOME[1], label="LA", from_utc=moved),
+    ]
+    # Living in Orange before the move, and in LA after it.
+    before = track(orange, ts(2024, 6, 1), 30, spacing_h=6)
+    after = track(HOME, ts(2025, 6, 1), 30, spacing_h=6, prefix="b")
+    assert segment_trips(before + after, homes, TH) == []
+
+    # The same two runs against a single fixed home: one era reads as travel.
+    assert segment_trips(before + after, HOME, TH)
+
+
+def test_a_home_only_suppresses_travel_while_it_is_in_effect():
+    """Before you lived there, the new address is a place you visited."""
+    moved = ts(2025, 1, 1)
+    homes = [Home(lat=DALIAN[0], lon=DALIAN[1], from_utc=moved),
+             Home(lat=HOME[0], lon=HOME[1])]
+    visit = track(DALIAN, ts(2024, 3, 2), 30, spacing_h=4)   # a year too early
+    assert segment_trips(visit, homes, TH), "a pre-move stay is still a trip"
+
+    living = track(DALIAN, ts(2025, 3, 2), 30, spacing_h=4)
+    assert segment_trips(living, homes, TH) == []
+
+
+def test_bare_coordinates_still_work():
+    """The original (lat, lon) form has to keep working — it is the common case."""
+    away = track(VEGAS, ts(2023, 6, 1), 30, spacing_h=4)
+    assert segment_trips(away, HOME, TH)
+    assert segment_trips(away, Home(lat=HOME[0], lon=HOME[1]), TH)
+    assert segment_trips(away, [Home(lat=HOME[0], lon=HOME[1])], TH)
 
 
 # ---- leg + trip classification -------------------------------------------

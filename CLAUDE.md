@@ -116,6 +116,14 @@ is a question for dry runs against the real library.
 - Trips begin at the first *away* stop. If home is Los Angeles, an LA→NY drive
   names itself "Las Vegas → New York". Correct by definition, but not what the
   plan's example name implies.
+- **`homes:` — more than one home, and homes with dates.** The plan assumes a
+  single fixed point. The real library has three: Orange County, then Los
+  Angeles after a move, plus a concurrent second home in Dalian. With one point
+  every stay at an unmodelled home clusters and gets named as a trip, which is
+  what produced dozens of "Dalian, CN" and "Orange, CA · 0 km travelled"
+  albums in the first real dry run. A photo is away only when it is far from
+  *every* home in effect on the day it was taken. `home:` still works and means
+  one home, always in effect.
 
 ## Still unknown
 
