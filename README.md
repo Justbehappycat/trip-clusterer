@@ -1,0 +1,129 @@
+# trip-clusterer
+
+Turns an Immich library into trip albums. Phase 3 of the Trip Photo Wall plan —
+the only piece written from scratch, because no photo app detects road trips well.
+
+Reads assets from Immich, segments them into trips, clusters stops, classifies
+the travel between them, names the result, and creates or updates one album per
+trip. State lives in SQLite so weekly reruns are cheap and idempotent.
+
+## Setup
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+cp config.example.yaml config.yaml
+```
+
+Fill in `home:` — derive it from the library rather than guessing:
+
+```bash
+.venv/bin/python tools/find_home.py --config config.yaml
+```
+
+The API key is never stored in `config.yaml`:
+
+```bash
+export IMMICH_API_KEY=...
+export IMMICH_BASE_URL=http://<mini>:2283
+```
+
+## Before the first real run
+
+Immich's REST API moves between releases, so the endpoint paths in
+`config.yaml` are configuration, not constants. Check them against your actual
+instance and pin the Immich version in `docker-compose.yml`:
+
+```bash
+.venv/bin/python cluster_trips.py --check-api
+```
+
+It fetches the instance's OpenAPI document, verifies every path and method the
+clusterer uses, and suggests near-matches for anything that moved.
+
+## Running
+
+Nothing is written unless you pass `--apply`.
+
+```bash
+.venv/bin/python cluster_trips.py                 # dry run: prints proposed albums
+.venv/bin/python cluster_trips.py --apply         # create/update albums
+.venv/bin/python cluster_trips.py --no-fetch      # re-cluster the cache, no API calls
+.venv/bin/python cluster_trips.py --list          # recorded trips and album ids
+.venv/bin/python cluster_trips.py --rename 4 "The Big One"
+```
+
+`--rename` sets a `custom_name` that reruns never overwrite. The heuristic name
+keeps updating underneath it, but the album keeps the name you gave it.
+
+## Tuning without Immich
+
+`--from-json` clusters a plain JSON asset list, so thresholds can be tuned
+before the library exists:
+
+```bash
+.venv/bin/python tools/make_fixtures.py > fixtures/synthetic.json
+.venv/bin/python cluster_trips.py --from-json fixtures/synthetic.json
+```
+
+The synthetic library contains a year of home photos, a 9-day LA→NY drive, a
+Seattle trip with a flight to Denver mid-way, a one-day Joshua Tree run that
+should be rejected, and a stretch of the drive with GPS stripped.
+
+## What the thresholds actually do
+
+All in `config.yaml`. Starting points, not answers.
+
+| Threshold | Effect |
+|---|---|
+| `home_radius_km` (40) | Further than this from home = "away". Note the first stop of every trip is the first *away* stop — if you live in LA, an LA→NY drive is named "Las Vegas → New York". |
+| `max_gap_hours` (36) | A longer gap between away photos splits one trip into two. The single biggest lever on results. |
+| `min_duration_days` (2), `min_photos` (10) | Reject day trips and thin runs. |
+| `stop_gap_hours` (30) | Deliberately higher than the plan's 12. At 12, an overnight with no photos splits a four-day stay in one city into four separate stops, and the description reads as a list of days rather than places. |
+| `flight_min_speed_kmh` (300) | See the caveat below. |
+| `road_trip_min_ground_fraction` (1.0) | Share of long-haul km that must be on the ground. 1.0 is the strict "no flights" rule; ~0.5 also admits fly-out-then-drive trips. |
+
+### Caveat: implied speed is a weak flight detector
+
+Leg speed is measured from one stop's last photo to the next stop's first
+photo, so it includes airport time and any stretch where nobody shot anything.
+A real Seattle→Denver flight with a 15-hour photo gap implies ~110 km/h, which
+reads as driving at any threshold you'd want to set — lowering
+`flight_min_speed_kmh` to 150 does not fix it. `tests/test_cluster.py` pins this
+behaviour so it can't regress silently.
+
+If misclassified road trips turn out to matter, the discriminator that actually
+works is route evidence rather than speed: a 1,600 km drive leaves photos at
+intermediate points, a flight leaves none. That's a design change, not a
+threshold change.
+
+## Weekly run
+
+See `launchd/com.tripcluster.weekly.plist` — edit the paths and the API key,
+copy to `~/Library/LaunchAgents/`, then `launchctl load`.
+
+## Tests
+
+```bash
+.venv/bin/python -m pytest tests/ -q
+```
+
+No Immich instance required; everything below the API client is pure functions
+over synthetic tracks.
+
+## Layout
+
+```
+cluster_trips.py          CLI: fetch, cluster, dry-run, apply
+tripcluster/
+  config.py               config.yaml + env; thresholds
+  model.py                Asset, Stop, Leg, Trip
+  geo.py                  great-circle maths, GPS interpolation
+  cluster.py              segmentation, stops, legs, road-trip test
+  geocode.py              offline reverse geocoding of stop centroids
+  naming.py               album names and descriptions
+  store.py                SQLite: asset cache, trip↔album mapping, custom names
+  immich.py               API client + OpenAPI verification
+tools/
+  find_home.py            derive home coordinates from the library
+  make_fixtures.py        synthetic library for threshold tuning
+```

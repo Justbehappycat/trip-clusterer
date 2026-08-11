@@ -1,0 +1,5 @@
+requests>=2.31
+PyYAML>=6.0
+# Offline city-level reverse geocoding. Optional: without it, stops are named
+# by coordinates and everything else still works.
+reverse_geocoder>=1.5.1

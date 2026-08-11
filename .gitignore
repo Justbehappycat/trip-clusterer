@@ -1,0 +1,8 @@
+config.yaml
+*.db
+__pycache__/
+*.pyc
+.venv/
+fixtures/*.json
+.pytest_cache/
+logs/

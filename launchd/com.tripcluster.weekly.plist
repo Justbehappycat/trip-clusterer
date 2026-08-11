@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Weekly trip clustering. Install on the Mac Mini:
+
+    cp launchd/com.tripcluster.weekly.plist ~/Library/LaunchAgents/
+    # edit the paths and the API key below first
+    launchctl load ~/Library/LaunchAgents/com.tripcluster.weekly.plist
+    launchctl start com.tripcluster.weekly     # run once now to check
+
+  Uses a LaunchAgent (not a Daemon) so it runs as your user and can reach the
+  Immich container. RunAtLoad is off on purpose: a login shouldn't trigger a
+  full pass. StartCalendarInterval fires Sundays at 03:30, and launchd will run
+  a missed job once the Mini next wakes.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.tripcluster.weekly</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/CHANGEME/Trip-photo-project/.venv/bin/python</string>
+        <string>/Users/CHANGEME/Trip-photo-project/cluster_trips.py</string>
+        <string>--config</string>
+        <string>/Users/CHANGEME/Trip-photo-project/config.yaml</string>
+        <string>--apply</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/CHANGEME/Trip-photo-project</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <!-- Read by tripcluster.config; keep this file chmod 600. -->
+        <key>IMMICH_API_KEY</key>
+        <string>CHANGEME</string>
+        <key>IMMICH_BASE_URL</key>
+        <string>http://localhost:2283</string>
+    </dict>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Weekday</key><integer>0</integer>
+        <key>Hour</key><integer>3</integer>
+        <key>Minute</key><integer>30</integer>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/CHANGEME/Trip-photo-project/logs/cluster.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/CHANGEME/Trip-photo-project/logs/cluster.err</string>
+</dict>
+</plist>

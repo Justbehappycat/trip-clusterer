@@ -1,0 +1,62 @@
+# Copy to config.yaml and fill in `home`. The API key is NOT stored here -
+# export IMMICH_API_KEY in the environment (see the launchd plist).
+#
+#   cp config.example.yaml config.yaml
+
+# Photos within `home_radius_km` of this point are "not a trip".
+# Use tools/find_home.py to derive it from your own library.
+home:
+  lat: 0.0
+  lon: 0.0
+
+state_db: trips.db
+
+# "offline" uses the reverse_geocoder package (no network, no rate limits).
+# "none" names stops by coordinates.
+geocoder: offline
+
+# Optional prefix on generated album names, e.g. "Trip: ".
+album_prefix: ""
+
+api:
+  base_url: http://localhost:2283
+  timeout_seconds: 60
+  page_size: 1000
+
+  # VERIFY THESE against your running instance before the first --apply:
+  #   ./cluster_trips.py --check-api
+  # Immich moves endpoints between releases. Pin the Immich version in
+  # docker-compose.yml so an auto-update can't break this silently.
+  search_assets: /api/search/metadata
+  create_album: /api/albums
+  update_album: /api/albums/{id}
+  add_album_assets: /api/albums/{id}/assets
+  openapi_spec: /api/specs-json
+
+# Starting points, not answers. Expect two or three rounds of dry-run tuning.
+# max_gap_hours and home_radius_km move the results the most.
+thresholds:
+  # Trip segmentation
+  home_radius_km: 40.0        # further than this from home = "away"
+  max_gap_hours: 36.0         # a longer gap splits one trip into two
+  min_duration_days: 2.0      # shorter runs are discarded...
+  min_photos: 10              # ...as are sparser ones
+
+  # Stop clustering: same stop if within this distance and time of the cluster
+  stop_radius_km: 50.0
+  # 30 rather than 12, so an overnight with no photos doesn't open a new stop
+  # and split a multi-day stay in one city into one stop per day.
+  stop_gap_hours: 30.0
+
+  # Leg classification by implied speed between consecutive stops
+  flight_min_speed_kmh: 300.0
+  drive_min_speed_kmh: 40.0
+  drive_max_speed_kmh: 150.0
+  long_haul_min_km: 100.0
+  # Share of long-haul kilometres that must be covered on the ground for the
+  # trip to count as a road trip. 1.0 = the strict "no flights" rule; lower to
+  # ~0.5 to also catch fly-out-then-drive trips.
+  road_trip_min_ground_fraction: 1.0
+
+  # GPS backfill: don't interpolate across gaps longer than this
+  max_interpolation_gap_hours: 6.0
