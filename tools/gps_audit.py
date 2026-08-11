@@ -25,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from tripcluster.config import load_config          # noqa: E402
 from tripcluster.geo import haversine_km            # noqa: E402
-from tripcluster.immich import ImmichClient, parse_asset  # noqa: E402
+from tripcluster.immich import ImmichClient, ImmichError, parse_asset  # noqa: E402
 
 
 def pct(n: int, total: int) -> str:
@@ -40,7 +40,11 @@ def main() -> int:
     args = ap.parse_args()
 
     cfg = load_config(args.config)
-    client = ImmichClient(cfg.api)
+    try:
+        client = ImmichClient(cfg.api)
+    except ImmichError as e:
+        print(f"ERROR {e}", file=sys.stderr)
+        return 2
     home = (cfg.home_lat, cfg.home_lon)
 
     seen = unparsed = with_fix = with_tz = 0
@@ -48,28 +52,35 @@ def main() -> int:
     years: Counter[str] = Counter()
     first = last = None
 
-    for raw in client.iter_assets():
-        seen += 1
-        a = parse_asset(raw)
-        if a is None:
-            # parse_asset already logs why; count them so a systematic
-            # problem shows up as a number rather than scrolled-past noise.
-            unparsed += 1
-        else:
-            if a.tz_offset_min is not None:
-                with_tz += 1
-            if a.has_fix:
-                with_fix += 1
-                if haversine_km(a.lat, a.lon, home[0], home[1]) > cfg.thresholds.home_radius_km:
-                    away += 1
-            first = a.ts_utc if first is None else min(first, a.ts_utc)
-            last = a.ts_utc if last is None else max(last, a.ts_utc)
-            years[datetime.fromtimestamp(a.ts_utc, timezone.utc).strftime("%Y")] += 1
+    # Wrap the loop, not a list(): iter_assets is a generator that pages
+    # lazily, so --sample must be able to stop it mid-walk rather than
+    # materialising the whole library first.
+    try:
+        for raw in client.iter_assets():
+            seen += 1
+            a = parse_asset(raw)
+            if a is None:
+                # parse_asset already logs why; count them so a systematic
+                # problem shows up as a number rather than scrolled-past noise.
+                unparsed += 1
+            else:
+                if a.tz_offset_min is not None:
+                    with_tz += 1
+                if a.has_fix:
+                    with_fix += 1
+                    if haversine_km(a.lat, a.lon, home[0], home[1]) > cfg.thresholds.home_radius_km:
+                        away += 1
+                first = a.ts_utc if first is None else min(first, a.ts_utc)
+                last = a.ts_utc if last is None else max(last, a.ts_utc)
+                years[datetime.fromtimestamp(a.ts_utc, timezone.utc).strftime("%Y")] += 1
 
-        if seen % 2000 == 0:
-            print(f"  ...{seen} assets", file=sys.stderr)
-        if args.sample and seen >= args.sample:
-            break
+            if seen % 2000 == 0:
+                print(f"  ...{seen} assets", file=sys.stderr)
+            if args.sample and seen >= args.sample:
+                break
+    except ImmichError as e:
+        print(f"ERROR {e}", file=sys.stderr)
+        return 2
 
     if not seen:
         print("No assets returned. Check the API key and that the library is populated.")

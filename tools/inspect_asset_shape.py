@@ -22,7 +22,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from tripcluster.config import load_config      # noqa: E402
-from tripcluster.immich import ImmichClient     # noqa: E402
+from tripcluster.immich import ImmichClient, ImmichError  # noqa: E402
 
 
 def typename(v) -> str:
@@ -38,7 +38,11 @@ def main() -> int:
     args = ap.parse_args()
 
     cfg = load_config(args.config)
-    client = ImmichClient(cfg.api)
+    try:
+        client = ImmichClient(cfg.api)
+    except ImmichError as e:
+        print(f"ERROR {e}", file=sys.stderr)
+        return 2
 
     print(f"search endpoint : {cfg.api.search_assets}")
     print(f"page_size       : {cfg.api.page_size}")
@@ -46,7 +50,11 @@ def main() -> int:
     total = 0
     for page in range(1, args.pages + 1):
         body = {"page": page, "size": cfg.api.page_size}
-        data = client._request("POST", cfg.api.search_assets, json=body)
+        try:
+            data = client._request("POST", cfg.api.search_assets, json=body)
+        except ImmichError as e:
+            print(f"ERROR {e}", file=sys.stderr)
+            return 2
 
         # Envelope shape: where do items and the next-page cursor actually live?
         if isinstance(data, dict):

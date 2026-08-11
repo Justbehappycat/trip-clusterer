@@ -254,6 +254,18 @@ def test_update_album_omits_the_name_when_hand_edited(client):
     assert patch[2]["description"] == "new description"
 
 
+def test_unreachable_host_is_wrapped_not_raw(client):
+    """A down server must not surface as a urllib3 traceback.
+
+    The weekly run is a cron job; a 60-line stack ending in
+    NewConnectionError says nothing about the actual cause, which is almost
+    always a wrong base_url or a stopped container.
+    """
+    cfg = ApiConfig(base_url="http://127.0.0.1:1", key="test-key")
+    with pytest.raises(ImmichError, match="cannot reach Immich"):
+        ImmichClient(cfg)._request("GET", "/api/anything")
+
+
 def test_http_errors_are_wrapped(client):
     with pytest.raises(ImmichError, match="404"):
         client._request("GET", "/api/does-not-exist")

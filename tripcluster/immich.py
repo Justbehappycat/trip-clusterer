@@ -46,7 +46,19 @@ class ImmichClient:
 
     def _request(self, method: str, path: str, *, fmt: dict | None = None, **kw) -> Any:
         url = self._url(path, **(fmt or {}))
-        resp = self.session.request(method, url, timeout=self.cfg.timeout_seconds, **kw)
+        try:
+            resp = self.session.request(
+                method, url, timeout=self.cfg.timeout_seconds, **kw
+            )
+        except requests.RequestException as e:
+            # Unreachable host, DNS failure, timeout. Without this the weekly
+            # run dies in a urllib3 traceback that says nothing useful; the
+            # usual cause is simply the wrong base_url or a server that is down.
+            raise ImmichError(
+                f"cannot reach Immich at {self.base}: {type(e).__name__}. "
+                f"Check api.base_url in config.yaml (or IMMICH_BASE_URL) and "
+                f"that the server is running."
+            ) from e
         if resp.status_code >= 400:
             raise ImmichError(
                 f"{method} {url} -> {resp.status_code}: {resp.text[:400]}"
