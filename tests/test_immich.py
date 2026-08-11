@@ -39,6 +39,9 @@ class Stub(BaseHTTPRequestHandler):
     # verify_spec depends on that: 401 means the route exists, 404 means it
     # doesn't. Set False to simulate an instance with auth switched off.
     require_auth = True
+    # When True the stub also returns Live Photo video halves, which real
+    # Immich marks visibility=hidden and omits from album counts.
+    include_hidden = False
 
     def log_message(self, *a):  # keep pytest output clean
         pass
@@ -112,6 +115,14 @@ class Stub(BaseHTTPRequestHandler):
                         "timeZone": "America/Los_Angeles",
                     }
                 items.append(item)
+                if Stub.include_hidden:
+                    # The video half of a Live Photo, as Immich returns it.
+                    items.append({
+                        "id": f"hidden{page}-{i}",
+                        "type": "VIDEO",
+                        "visibility": "hidden",
+                        "fileCreatedAt": "2023-09-02T08:00:00.000-07:00",
+                    })
             nxt = page + 1 if page < Stub.pages else None
             return self._send({"assets": {"items": items, "nextPage": nxt}})
         if self.path == "/api/albums":
@@ -137,6 +148,7 @@ def server():
     Stub.calls = []
     Stub.pages = 2
     Stub.require_auth = True
+    Stub.include_hidden = False
     httpd = HTTPServer(("127.0.0.1", 0), Stub)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
@@ -327,3 +339,25 @@ def test_parse_asset_keeps_zero_coordinates():
     })
     assert asset.lon == 0.0
     assert asset.has_fix is True
+
+
+def test_hidden_live_photo_videos_are_skipped(server):
+    """23% of the real library is `type=VIDEO visibility=hidden`.
+
+    Immich stores the video half of every Live Photo as its own asset and
+    excludes it from an album's assetCount. Counting them as photos inflated
+    every album total by about a quarter — 173 sent, 110 counted — made
+    min_photos quietly lenient, and let one Live Photo vote twice on a stop.
+    """
+    Stub.include_hidden = True
+    cfg = ApiConfig(base_url=server, key="test-key", page_size=3)
+    ids = [a["id"] for a in ImmichClient(cfg).iter_assets()]
+    assert ids, "sanity: the stub returned something"
+    assert not any(i.startswith("hidden") for i in ids)
+
+
+def test_assets_without_a_visibility_field_are_kept(server):
+    """Older releases have no such concept; absent must not mean excluded."""
+    Stub.include_hidden = False
+    cfg = ApiConfig(base_url=server, key="test-key", page_size=3)
+    assert len(list(ImmichClient(cfg).iter_assets())) == 6

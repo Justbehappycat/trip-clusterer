@@ -198,7 +198,7 @@ class ImmichClient:
             items = _dig(data, ["assets", "items"]) or _dig(data, ["items"]) or []
             if not items:
                 return
-            yield from items
+            yield from (i for i in items if _on_timeline(i))
 
             next_page = _dig(data, ["assets", "nextPage"]) or _dig(data, ["nextPage"])
             if not next_page:
@@ -254,6 +254,22 @@ class ImmichClient:
 # ---- parsing --------------------------------------------------------------
 
 _TS_FIELDS = ("dateTimeOriginal", "localDateTime", "fileCreatedAt", "createdAt")
+
+
+def _on_timeline(raw: dict) -> bool:
+    """Skip assets Immich itself does not show on the timeline.
+
+    23% of this library is `type=VIDEO visibility=hidden`: the video half of
+    every Live Photo, stored as its own asset. Counting those as photos
+    inflates every album total by about a quarter, makes min_photos quietly
+    lenient, and lets a single Live Photo vote twice on where a stop is.
+    Immich excludes them from an album's assetCount, which is how the
+    discrepancy surfaced — 173 sent, 110 counted.
+
+    Absent field means an older release that has no such concept: include it.
+    """
+    v = raw.get("visibility")
+    return v is None or v == "timeline"
 
 
 def parse_asset(raw: dict) -> Asset | None:
