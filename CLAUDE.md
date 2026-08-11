@@ -62,36 +62,49 @@ Remaining before the first real run, in this order:
 
 ## Open defects
 
-**Flights between two away stops can still classify as ground travel — partly
-fixed.** Leg speed is measured last-photo-of-one-stop to first-photo-of-the-next,
-so it absorbs airport time and understates the real pace by however long nobody
-was shooting.
+**Flight/drive classification — largely resolved, with two documented limits.**
 
-`flight_min_speed_kmh` now defaults to **150**, not 300. That fixes the
-moderate-gap case (7-hour gap, ~234 km/h implied, previously a road trip) and
-breaks nothing else in the suite. It does **not** fix the wide-gap case: a
-15-hour gap implies ~109 km/h, an ordinary driving pace, and no threshold
-recovers it — going below 109 would start calling real road trips flights. 150
-is the floor, since it already equals `drive_max_speed_kmh`.
+Leg speed is measured last-photo-of-one-stop to first-photo-of-the-next, so it
+absorbs airport time and understates the real pace by however long nobody was
+shooting. Two tests now run, either sufficient to call a flight:
 
-Both cases are pinned in `tests/test_cluster.py`:
-`test_moderate_photo_gap_flight_is_caught_at_the_default` (fixed, also guards
-against someone restoring 300) and
-`test_wide_photo_gap_flight_is_a_known_miss_at_any_threshold` (deliberately
-asserts the wrong answer, so the limitation stays visible).
+1. `flight_min_speed_kmh` (150, down from 300).
+2. **Road feasibility** — the one that actually fires. Legs are great-circle;
+   roads run ~1.25x longer. If covering that road distance in the elapsed time
+   needs a sustained average above `max_sustained_road_kmh` (130), no car did
+   it. Effective great-circle cutoff: 104 km/h.
 
-Route evidence — the fix this note used to call for — turns out not to apply.
-An en-route photo doesn't sit *inside* a leg: `cluster_stops` files every
-GPS-fixed photo into a stop, so an intermediate photo **splits the leg in two**.
-A drive with en-route photos already classifies correctly as a chain of short
-legs. The legs that reach the speed test are precisely the ones with no
-intermediate photos to consult, so there is nothing there to look at. The next
-candidate is `Asset.tz_offset_min`: a flight usually crosses a timezone, a drive
-of the same length usually doesn't, and the EXIF offset is already parsed.
+Feasibility is the sounder test because it errs in the safe direction: elapsed
+time overstates travel time, so the required road pace is a *lower bound* on
+what really happened. Seattle→Denver with a 15-hour gap implies 109 km/h — an
+ordinary driving pace no threshold could flag — but needs 137 km/h on road, so
+it is now correctly a flight.
 
-All of this is measured against synthetic fixtures only. Whether the wide-gap
-miss matters at all depends on how often it happens in the real library —
-settle that with dry runs after Phase 2, not by tuning further now.
+What it does **not** fix, both pinned in `tests/test_cluster.py`:
+
+- **Short flights.** Seattle→Spokane with 5 hours of airport either side needs
+  only 90 km/h on road. Genuinely indistinguishable from driving it.
+  (`test_short_flight_with_a_long_gate_gap_is_still_a_known_miss`)
+- **Very wide gaps.** For a 1,640 km leg the method reaches to about a 16-hour
+  gap. The synthetic fixture's own Seattle→Denver has a 22-hour gap, implying
+  75 km/h — that is an ordinary two-day drive and is *correctly* classified as
+  driving. Not every miss is a defect.
+
+The margin against real drives is thin and worth respecting:
+`test_a_hard_but_real_drive_is_not_called_a_flight` (900 km in 9 h, 125 km/h on
+road) is what breaks first if anyone lowers the ceiling or raises circuity.
+
+Route evidence, which this note once called for, does not apply. An en-route
+photo doesn't sit *inside* a leg: `cluster_stops` files every GPS-fixed photo
+into a stop, so an intermediate photo **splits the leg in two**. A drive with
+en-route photos already classifies correctly as a chain of short legs. The legs
+that reach these tests are precisely the ones with nothing to consult.
+`Asset.tz_offset_min` is also a dead end — Seattle→Denver crosses a timezone
+whether flown or driven, so it only restates east-west displacement, which
+`haversine_km` already gives.
+
+Still measured against synthetic fixtures only. How often either limit matters
+is a question for dry runs against the real library.
 
 ## Deliberate deviations from the plan
 

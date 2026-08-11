@@ -199,26 +199,27 @@ def test_moderate_photo_gap_flight_is_caught_at_the_default():
     assert legs[0].kind == "flight"
     assert classify_trip(legs, TH) == "trip"
 
-    # The old default is what made this a road trip. Kept so the regression
-    # can't come back by someone restoring 300 without reading why.
-    lax = Thresholds(flight_min_speed_kmh=300.0)
-    assert classify_legs(trip.stops, lax)[0].kind == "ground"
-    assert classify_trip(classify_legs(trip.stops, lax), lax) == "road_trip"
+    # How this looked before either fix: the old 300 km/h default *and* no
+    # road-feasibility test. Kept to document what the bug actually was.
+    # Note the feasibility test alone now catches this even at 300, so
+    # restoring the old threshold is no longer sufficient to reintroduce it.
+    old = Thresholds(flight_min_speed_kmh=300.0, max_sustained_road_kmh=10_000.0)
+    assert classify_legs(trip.stops, old)[0].kind == "ground"
+    assert classify_trip(classify_legs(trip.stops, old), old) == "road_trip"
 
 
-def test_wide_photo_gap_flight_is_a_known_miss_at_any_threshold():
-    """The case no threshold fixes — pinned as a known limitation, not a goal.
+def test_wide_photo_gap_flight_is_caught_by_road_infeasibility():
+    """The case no *speed threshold* fixes, now caught by a different test.
 
     Same Seattle -> Denver flight, but nobody shoots for 15 hours around it.
-    That implies ~109 km/h, which is an ordinary driving pace: the leg is
-    indistinguishable from a real long drive on speed alone. Catching it would
-    mean setting the flight cutoff below 109, which would reclassify genuine
-    road trips as flights — strictly worse.
+    That implies ~109 km/h — an ordinary driving pace — so any flight_min_speed
+    low enough to catch it would also reclassify genuine road trips.
 
-    Fixing this needs evidence other than speed. Note that route evidence, the
-    obvious candidate, does not help *here*: an en-route photo does not sit
-    inside a leg, it splits the leg in two (see the drive tests above), so a
-    two-stop trip like this one offers nothing to consult.
+    Road feasibility catches it without that trade. 1640 km great-circle is
+    ~2050 km of road; covering it in 15 hours needs a sustained 137 km/h, which
+    no car does. The test is sound in the right direction: elapsed time runs
+    stop-end to stop-start and so overstates travel time, meaning the required
+    pace computed here is a *lower bound* on what really happened.
     """
     assets = track(SEATTLE, ts(2023, 6, 1, 6), 6, spacing_h=1) + track(
         DENVER, ts(2023, 6, 2, 2), 6, spacing_h=1, prefix="b"
@@ -227,9 +228,52 @@ def test_wide_photo_gap_flight_is_a_known_miss_at_any_threshold():
     trip.stops = cluster_stops(trip, TH)
     legs = classify_legs(trip.stops, TH)
 
-    assert 90 < legs[0].implied_speed_kmh < 130
-    assert legs[0].kind == "driving"          # wrong, and knowingly so
+    assert 90 < legs[0].implied_speed_kmh < 130      # looks like driving
+    assert legs[0].kind == "flight"                  # but no car could do it
+    assert classify_trip(legs, TH) == "trip"
+
+    # Speed alone still cannot see it — this is what the new test buys.
+    speed_only = Thresholds(max_sustained_road_kmh=10_000.0)
+    assert classify_legs(trip.stops, speed_only)[0].kind == "driving"
+
+
+def test_a_hard_but_real_drive_is_not_called_a_flight():
+    """The false-positive guard: 900 km in 9 h is a long day, not a flight.
+
+    100 km/h great-circle needs ~125 km/h on road, under the 130 ceiling. This
+    is the closest realistic drive to the cutoff, so it is the test that breaks
+    first if max_sustained_road_kmh is lowered or circuity is raised.
+    """
+    omaha = (41.2565, -95.9345)
+    assets = track(DENVER, ts(2023, 6, 1, 6), 4, spacing_h=1) + track(
+        omaha, ts(2023, 6, 1, 18), 4, spacing_h=1, prefix="b"
+    )
+    trip = Trip(assets=assets)
+    trip.stops = cluster_stops(trip, TH)
+    legs = classify_legs(trip.stops, TH)
+    assert legs[0].kind == "driving"
     assert classify_trip(legs, TH) == "road_trip"
+
+
+def test_short_flight_with_a_long_gate_gap_is_still_a_known_miss():
+    """The limitation that survives — pinned so it stays visible.
+
+    Seattle -> Spokane is ~360 km. With 5 hours between the last photo in one
+    city and the first in the other, that implies ~72 km/h, which is simply a
+    drive. Road feasibility does not help: ~90 km/h on road is entirely
+    possible. Nothing in the photo track distinguishes this from driving the
+    same route, so it is recorded rather than chased.
+    """
+    spokane = (47.6588, -117.4260)
+    assets = track(SEATTLE, ts(2023, 6, 1, 6), 4, spacing_h=1) + track(
+        spokane, ts(2023, 6, 1, 13), 4, spacing_h=1, prefix="b"
+    )
+    trip = Trip(assets=assets)
+    trip.stops = cluster_stops(trip, TH)
+    legs = classify_legs(trip.stops, TH)
+
+    assert legs[0].implied_speed_kmh < 104           # under the cutoff
+    assert legs[0].kind in ("driving", "ground")     # wrong, and knowingly so
 
 
 def test_driving_pace_reads_as_a_road_trip():

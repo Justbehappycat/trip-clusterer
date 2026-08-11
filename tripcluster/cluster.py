@@ -95,7 +95,20 @@ def cluster_stops(trip: Trip, th: Thresholds) -> list[Stop]:
 
 
 def classify_legs(stops: list[Stop], th: Thresholds) -> list[Leg]:
-    """Classify travel between each consecutive stop pair by implied speed."""
+    """Classify travel between each consecutive stop pair.
+
+    Two independent flight tests, either of which is sufficient:
+
+    1. Implied speed above ``flight_min_speed_kmh``.
+    2. Road infeasibility — covering the road distance in the elapsed time
+       would require an impossible sustained average.
+
+    The second is the one that fires in practice. It is also the sounder test,
+    because elapsed time runs from one stop's last photo to the next stop's
+    first photo and so is always *longer* than the real travel time. Implied
+    speed is therefore an underestimate, and if even the underestimate demands
+    an impossible road pace, the true pace was higher still.
+    """
     legs: list[Leg] = []
     for cur, nxt in zip(stops, stops[1:]):
         dist = haversine_km(cur.lat, cur.lon, nxt.lat, nxt.lon)
@@ -104,7 +117,16 @@ def classify_legs(stops: list[Stop], th: Thresholds) -> list[Leg]:
         elapsed = max(nxt.start_utc - cur.end_utc, 0) / 3600.0
         speed = dist / elapsed if elapsed > 0 else float("inf")
 
-        if speed > th.flight_min_speed_kmh:
+        # What a car would have had to average on real roads to do this.
+        required_road_kmh = (
+            dist * th.road_circuity_factor / elapsed if elapsed > 0 else float("inf")
+        )
+        road_impossible = (
+            dist >= th.long_haul_min_km
+            and required_road_kmh > th.max_sustained_road_kmh
+        )
+
+        if speed > th.flight_min_speed_kmh or road_impossible:
             kind = "flight"
         elif dist >= th.long_haul_min_km and th.drive_min_speed_kmh <= speed <= th.drive_max_speed_kmh:
             kind = "driving"

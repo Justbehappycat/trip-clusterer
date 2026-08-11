@@ -91,17 +91,40 @@ it understates depends entirely on when you happened to take pictures.
 
 How far the same Seattle→Denver flight (~1,640 km) drifts with the photo gap:
 
-| Photo gap | Implied speed | At 300 (old) | At 150 (current) |
+| Photo gap | Implied speed | Road pace it needs | Verdict |
 |---|---|---|---|
-| 7 h | ~234 km/h | `ground` → road trip ✗ | `flight` ✓ |
-| 15 h | ~109 km/h | `driving` → road trip ✗ | `driving` → road trip ✗ |
+| 7 h | ~234 km/h | 293 km/h | `flight` ✓ |
+| 15 h | ~109 km/h | 137 km/h | `flight` ✓ |
+| 22 h | ~75 km/h | 93 km/h | `driving` — and rightly so |
 
-150 is the practical floor for the threshold: it equals `drive_max_speed_kmh`,
-so it already flags anything faster than a car sustains. Going lower would
-start calling genuine road trips flights, which is strictly worse. **The wide-gap
-case is a known miss, not a bug to be tuned away** —
-`test_wide_photo_gap_flight_is_a_known_miss_at_any_threshold` pins it so its
-status stays visible.
+The second row is the one a speed threshold could never reach: 109 km/h *is* a
+driving pace, so no `flight_min_speed_kmh` low enough to catch it leaves real
+road trips alone. What catches it is a different question — **not "was this
+fast?" but "could a car have covered this ground in this time?"**
+
+Legs are measured great-circle; roads run about 1.25x longer. 1,640 km straight
+line is ~2,050 km of road, and 2,050 km in 15 hours demands a sustained
+137 km/h. No car does that. The test is sound in the conservative direction:
+elapsed time runs from one stop's last photo to the next stop's first, so it
+*overstates* travel time, which makes the required pace a lower bound on what
+really happened.
+
+The third row is not a failure. 1,640 km in 22 hours is an ordinary two-day
+drive, and nothing in the photo track distinguishes it from one. For a leg this
+long the method reaches to roughly a 16-hour gap; past that the evidence is
+genuinely gone.
+
+Two limits worth knowing:
+
+- **Short flights still read as drives.** Seattle→Spokane with 5 hours of
+  airport either side implies 72 km/h and needs only 90 km/h on road — a
+  perfectly possible drive. Pinned by
+  `test_short_flight_with_a_long_gate_gap_is_still_a_known_miss`.
+- **The margin against hard drives is thin.** The cutoff sits at 104 km/h
+  great-circle; 900 km in 9 hours needs 125 km/h on road and stays `driving`,
+  but 900 km in 8 hours does not. That case is pinned by
+  `test_a_hard_but_real_drive_is_not_called_a_flight`, which is what breaks
+  first if you lower the ceiling or raise circuity.
 
 Route evidence is the usual suggested fix — a long drive leaves photos at
 intermediate points, a flight leaves none — but note what it can and cannot do

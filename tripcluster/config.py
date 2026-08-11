@@ -32,6 +32,17 @@ class Thresholds:
     flight_min_speed_kmh: float = 150.0
     drive_min_speed_kmh: float = 40.0
     drive_max_speed_kmh: float = 150.0
+    # Road-feasibility test. Legs are measured great-circle, but a car drives
+    # roads: US interstate routings run about 1.2-1.3x the straight line. If
+    # covering that road distance in the elapsed time would demand a sustained
+    # average above max_sustained_road_kmh, no car did it.
+    #
+    # This binds well before flight_min_speed_kmh does (130/1.25 = 104 km/h
+    # great-circle), so it is the test that actually fires. The margin against
+    # a genuinely fast drive is thin — see the boundary tests in
+    # tests/test_cluster.py before changing either number.
+    road_circuity_factor: float = 1.25
+    max_sustained_road_kmh: float = 130.0
     long_haul_min_km: float = 100.0
     road_trip_min_ground_fraction: float = 1.0
 

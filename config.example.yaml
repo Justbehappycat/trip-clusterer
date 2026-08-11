@@ -57,6 +57,14 @@ thresholds:
   flight_min_speed_kmh: 150.0
   drive_min_speed_kmh: 40.0
   drive_max_speed_kmh: 150.0
+  # Road-feasibility test, and the one that actually fires. Legs are measured
+  # great-circle; roads run ~1.2-1.3x longer. If the road distance could not
+  # have been covered in the elapsed time at a sustainable average, it was not
+  # a car. 130/1.25 puts the effective great-circle cutoff at 104 km/h.
+  # Raising circuity or lowering the ceiling starts calling hard drives
+  # flights — 900 km in 9 h needs 125 km/h and is pinned in the tests.
+  road_circuity_factor: 1.25
+  max_sustained_road_kmh: 130.0
   long_haul_min_km: 100.0
   # Share of long-haul kilometres that must be covered on the ground for the
   # trip to count as a road trip. 1.0 = the strict "no flights" rule; lower to
