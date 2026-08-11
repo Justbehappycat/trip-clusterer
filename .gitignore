@@ -6,3 +6,4 @@ __pycache__/
 fixtures/*.json
 .pytest_cache/
 logs/
+map.html
