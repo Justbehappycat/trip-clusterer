@@ -94,18 +94,24 @@ class Stub(BaseHTTPRequestHandler):
             page = body.get("page", 1)
             if page > Stub.pages:
                 return self._send({"assets": {"items": [], "nextPage": None}})
-            items = [
-                {
+            # Immich omits exifInfo unless withExif is requested. Reproducing
+            # that here is the point: without it the caller still gets assets
+            # and timestamps, just no coordinates, and nothing errors.
+            with_exif = bool(body.get("withExif"))
+            items = []
+            for i in range(3):
+                item: dict = {
                     "id": f"p{page}-{i}",
-                    "exifInfo": {
+                    "fileCreatedAt": "2023-09-02T08:00:00.000-07:00",
+                }
+                if with_exif:
+                    item["exifInfo"] = {
                         "dateTimeOriginal": "2023-09-02T08:00:00.000-07:00",
                         "latitude": 36.17,
                         "longitude": -115.14,
                         "timeZone": "America/Los_Angeles",
-                    },
-                }
-                for i in range(3)
-            ]
+                    }
+                items.append(item)
             nxt = page + 1 if page < Stub.pages else None
             return self._send({"assets": {"items": items, "nextPage": nxt}})
         if self.path == "/api/albums":
@@ -205,6 +211,22 @@ def test_probe_flags_an_instance_that_allows_unauthenticated_writes(server):
     cfg = ApiConfig(base_url=server, key="test-key", openapi_spec="/api/nope")
     problems = ImmichClient(cfg).verify_spec()
     assert problems and all("WITHOUT credentials" in p for p in problems)
+
+
+def test_search_requests_exif_and_gets_coordinates(client):
+    """Immich 3.1.0 omits exifInfo unless withExif is set on the request.
+
+    The failure this guards is silent: without the flag every asset still
+    arrives with an id and a timestamp, parse_asset accepts it, has_fix is
+    False for all of them, and segment_trips returns no trips at all. Measured
+    against the live instance, where the search response carried 28 keys and
+    no coordinate among them.
+    """
+    assets = [parse_asset(a) for a in client.iter_assets()]
+    assert all(a is not None and a.has_fix for a in assets)
+
+    posts = [c for c in Stub.calls if c[1] == "/api/search/metadata"]
+    assert posts and all(c[2].get("withExif") is True for c in posts)
 
 
 def test_pagination_stops_at_the_last_page(client):

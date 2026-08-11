@@ -169,7 +169,16 @@ class ImmichClient:
         """Page through every asset, newest-first, yielding raw dicts."""
         page = 1
         while True:
-            body: dict[str, Any] = {"page": page, "size": self.cfg.page_size}
+            # withExif is not optional for us: without it Immich omits the
+            # exifInfo block entirely, every asset parses with a timestamp and
+            # no coordinates, and the clusterer finds zero trips without
+            # raising anything. Verified against 3.1.0, where the search
+            # response carries 28 keys and none of them is a coordinate.
+            body: dict[str, Any] = {
+                "page": page,
+                "size": self.cfg.page_size,
+                "withExif": True,
+            }
             if updated_after:
                 body["updatedAfter"] = updated_after
             data = self._request("POST", self.cfg.search_assets, json=body)
