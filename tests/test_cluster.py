@@ -14,10 +14,13 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from tripcluster.cluster import (  # noqa: E402
-    build_trips, classify_legs, classify_trip, cluster_stops, segment_trips,
+    build_trips, classify_legs, classify_trip, cluster_stops, max_ground_km,
+    segment_trips,
 )
 from tripcluster.config import Thresholds  # noqa: E402
-from tripcluster.geo import centroid, haversine_km, interpolate_missing_gps  # noqa: E402
+from tripcluster.geo import (  # noqa: E402
+    centroid, drop_impossible_fixes, haversine_km, interpolate_missing_gps,
+)
 from tripcluster.model import Asset, Home, Trip  # noqa: E402
 from tripcluster.naming import describe, heuristic_name  # noqa: E402
 from tripcluster.store import Store  # noqa: E402
@@ -165,6 +168,53 @@ def test_inferred_coordinates_do_not_move_the_centroid():
     assert haversine_km(stops[0].lat, stops[0].lon, *VEGAS) < 3   # but not steering it
 
 
+# ---- impossible coordinates -----------------------------------------------
+
+def test_one_bad_fix_between_two_good_ones_is_discarded():
+    """The real case: a single photo in Cheshire inside an Arizona road trip.
+
+    It was a genuine iPhone HEIC — not a saved internet image — so provenance
+    could not have caught it. What gives it away is that it is impossible in
+    *both* directions: real travel is fast one way, because you arrive and
+    stay.
+    """
+    assets = track(DENVER, ts(2023, 6, 1, 8), 5, spacing_h=1)
+    assets.append(Asset(id="bad", ts_utc=ts(2023, 6, 1, 10, ),
+                        lat=53.3781, lon=-2.5620))          # Stockton Heath, GB
+    assets += track(DENVER, ts(2023, 6, 1, 13), 5, spacing_h=1, prefix="b")
+    assets.sort(key=lambda a: a.ts_utc)
+
+    assert drop_impossible_fixes(assets, 1000.0) == 1
+    bad = next(a for a in assets if a.id == "bad")
+    assert not bad.has_fix                    # coordinates cleared
+    assert bad in assets                      # but the photo is still yours
+    assert all(a.has_fix for a in assets if a.id != "bad")
+
+
+def test_a_real_flight_is_not_mistaken_for_a_bad_fix():
+    """Arriving somewhere fast and staying is travel, not an error."""
+    assets = (track(SEATTLE, ts(2023, 6, 1, 6), 5, spacing_h=1)
+              + track(NEW_YORK, ts(2023, 6, 1, 14), 5, spacing_h=1, prefix="b"))
+    assets.sort(key=lambda a: a.ts_utc)
+    assert drop_impossible_fixes(assets, 1000.0) == 0
+
+
+def test_in_flight_window_photos_survive():
+    """Photos shot out of the window are real positions, not bad fixes.
+
+    These appear in the library as Kamchatka and North Korea stops on
+    trans-Pacific legs. Cruise is ~900-1000 km/h, so the threshold sits above
+    it deliberately: the legs here are 966 km and 1066 km in an hour each.
+    """
+    assets = [
+        Asset(id="a", ts_utc=ts(2023, 6, 1, 6), lat=47.6, lon=-122.3),
+        Asset(id="w1", ts_utc=ts(2023, 6, 1, 7), lat=50.0, lon=-135.0),
+        Asset(id="w2", ts_utc=ts(2023, 6, 1, 8), lat=51.5, lon=-150.0),
+        Asset(id="b", ts_utc=ts(2023, 6, 1, 14), lat=35.7, lon=139.7),
+    ]
+    assert drop_impossible_fixes(assets, 1000.0) == 0
+
+
 # ---- multiple and time-bounded homes --------------------------------------
 
 DALIAN = (38.9140, 121.6147)
@@ -294,6 +344,24 @@ def test_wide_photo_gap_flight_is_caught_by_road_infeasibility():
     assert classify_legs(trip.stops, speed_only)[0].kind == "driving"
 
 
+def test_the_same_speed_is_a_drive_over_hours_and_a_flight_over_a_day():
+    """Sustainability depends on duration — one speed ceiling cannot say this.
+
+    ~110 km/h great-circle is a brisk interstate run for two hours and an
+    impossibility for fifteen, because nobody drives fifteen hours without
+    stopping. A fixed ceiling has to either reject the first or accept the
+    second; the duty-cycle model gets both right.
+    """
+    short_km = 110.0 * 2.0
+    long_km = 110.0 * 15.0
+    assert max_ground_km(2.0, TH) > short_km, "a 2-hour run at this pace is drivable"
+    assert max_ground_km(15.0, TH) < long_km, "15 hours at this pace is not"
+
+    # And the ceiling never decreases — more time is never less reach.
+    reach = [max_ground_km(h, TH) for h in (1, 2, 4, 8, 12, 24, 48)]
+    assert reach == sorted(reach)
+
+
 def test_a_hard_but_real_drive_is_not_called_a_flight():
     """The false-positive guard: 900 km in 9 h is a long day, not a flight.
 
@@ -377,15 +445,25 @@ def test_local_hops_alone_are_not_a_road_trip():
 # ---- naming ---------------------------------------------------------------
 
 def test_road_trip_named_origin_to_farthest():
+    """Vegas -> Denver -> Omaha -> New York, at a pace a car can actually keep.
+
+    The Omaha stop is not decoration. Denver to New York direct is 2,620 km,
+    and the road-feasibility test rejects that in the two days this trip would
+    otherwise allow — correctly, since it would mean driving 26 hours straight.
+    A real cross-country drive breaks somewhere in Nebraska.
+    """
+    omaha = (41.2565, -95.9345)
     assets = (
         track(VEGAS, ts(2023, 9, 2, 8), 12, spacing_h=2)
         + track(DENVER, ts(2023, 9, 4, 8), 12, spacing_h=2, prefix="b")
-        + track(NEW_YORK, ts(2023, 9, 6, 8), 12, spacing_h=2, prefix="c")
+        + track(omaha, ts(2023, 9, 6, 8), 12, spacing_h=2, prefix="c")
+        + track(NEW_YORK, ts(2023, 9, 8, 8), 12, spacing_h=2, prefix="d")
     )
     trips = build_trips(assets, HOME, TH)
     assert len(trips) == 1
     trip = trips[0]
-    for stop, name in zip(trip.stops, ["Las Vegas", "Denver", "New York"]):
+    assert trip.kind == "road_trip"
+    for stop, name in zip(trip.stops, ["Las Vegas", "Denver", "Omaha", "New York"]):
         stop.place = name
     trip.heuristic_name = heuristic_name(trip)
     assert trip.heuristic_name == "Las Vegas → New York · Sep 2023"

@@ -103,3 +103,40 @@ def _first_after(sorted_idx: list[int], i: int) -> int | None:
 
 def bounding_points(assets: Iterable) -> list[tuple[float, float]]:
     return [(a.lat, a.lon) for a in assets if a.lat is not None and a.lon is not None]
+
+
+def drop_impossible_fixes(assets: list, max_kmh: float) -> int:
+    """Blank coordinates that are impossible given both time-neighbours.
+
+    A photo whose position implies an absurd speed *arriving* and an absurd
+    speed *leaving* has a bad coordinate: real travel is fast in one direction
+    only, because you get somewhere and stay a while. One such photo in the
+    middle of a road trip fabricates two enormous legs and turns the whole trip
+    into a flight.
+
+    The coordinates are cleared rather than the asset dropped — the photo is
+    still yours, still in the album, it just no longer votes on where you were.
+    ``assets`` must be sorted by ``ts_utc``. Returns the number blanked.
+    """
+    placed = [a for a in assets if a.has_fix]
+    if len(placed) < 3:
+        return 0
+
+    def kmh(a, b) -> float:
+        hours = abs(b.ts_utc - a.ts_utc) / 3600.0
+        d = haversine_km(a.lat, a.lon, b.lat, b.lon)
+        if hours <= 0:
+            return float("inf") if d > 1.0 else 0.0
+        return d / hours
+
+    # Decide against the original track, then blank, so that one bad photo
+    # cannot drag its neighbours over the threshold as we go.
+    doomed = [
+        cur
+        for prev, cur, nxt in zip(placed, placed[1:], placed[2:])
+        if kmh(prev, cur) > max_kmh and kmh(cur, nxt) > max_kmh
+    ]
+    for a in doomed:
+        a.lat = a.lon = None
+        a.inferred = False
+    return len(doomed)

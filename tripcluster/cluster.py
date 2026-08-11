@@ -129,6 +129,27 @@ def cluster_stops(trip: Trip, th: Thresholds) -> list[Stop]:
     return stops
 
 
+def drivable_hours(elapsed_hours: float, th: Thresholds) -> float:
+    """How many of these elapsed hours could plausibly have been spent driving.
+
+    One stint can be driven end to end. Beyond that, a share of the remaining
+    time goes on fuel, food and sleep — which is why a single speed ceiling
+    cannot separate a brisk two-hour interstate run from an impossible fifteen
+    hours at the same average.
+    """
+    if elapsed_hours <= th.drive_stint_hours:
+        return elapsed_hours
+    return th.drive_stint_hours + (elapsed_hours - th.drive_stint_hours) * th.drive_duty_cycle
+
+
+def max_ground_km(elapsed_hours: float, th: Thresholds) -> float:
+    """Furthest a car could get, straight-line, in this elapsed time."""
+    if elapsed_hours <= 0:
+        return 0.0
+    road_km = th.max_sustained_road_kmh * drivable_hours(elapsed_hours, th)
+    return road_km / th.road_circuity_factor
+
+
 def classify_legs(stops: list[Stop], th: Thresholds) -> list[Leg]:
     """Classify travel between each consecutive stop pair.
 
@@ -152,13 +173,8 @@ def classify_legs(stops: list[Stop], th: Thresholds) -> list[Leg]:
         elapsed = max(nxt.start_utc - cur.end_utc, 0) / 3600.0
         speed = dist / elapsed if elapsed > 0 else float("inf")
 
-        # What a car would have had to average on real roads to do this.
-        required_road_kmh = (
-            dist * th.road_circuity_factor / elapsed if elapsed > 0 else float("inf")
-        )
         road_impossible = (
-            dist >= th.long_haul_min_km
-            and required_road_kmh > th.max_sustained_road_kmh
+            dist >= th.long_haul_min_km and dist > max_ground_km(elapsed, th)
         )
 
         if speed > th.flight_min_speed_kmh or road_impossible:

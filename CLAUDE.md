@@ -70,9 +70,18 @@ shooting. Two tests now run, either sufficient to call a flight:
 
 1. `flight_min_speed_kmh` (150, down from 300).
 2. **Road feasibility** — the one that actually fires. Legs are great-circle;
-   roads run ~1.25x longer. If covering that road distance in the elapsed time
-   needs a sustained average above `max_sustained_road_kmh` (130), no car did
-   it. Effective great-circle cutoff: 104 km/h.
+   roads run ~1.15x longer, and driving is not sustainable indefinitely:
+   `drive_stint_hours` (8) at the wheel, then `drive_duty_cycle` (0.55) of the
+   rest. If the distance exceeds what a car could cover in that drivable time
+   at `max_sustained_road_kmh` (150), no car did it.
+
+The duty cycle is the part that matters, and it took real data to see. A fixed
+ceiling cannot separate 110 km/h for two hours (a brisk interstate run) from
+110 km/h for fifteen (nobody) — it has to reject the first or accept the
+second. Calibrating against synthetic fixtures gave 46 false flight legs on the
+real library, because no fixture contained interstate driving. With the duty
+cycle, the seven genuine cross-country drives all label correctly and the China
+sea-crossings do not.
 
 Feasibility is the sounder test because it errs in the safe direction: elapsed
 time overstates travel time, so the required road pace is a *lower bound* on

@@ -18,7 +18,7 @@ from pathlib import Path
 
 from tripcluster.cluster import build_trips
 from tripcluster.config import load_config
-from tripcluster.geo import interpolate_missing_gps
+from tripcluster.geo import drop_impossible_fixes, interpolate_missing_gps
 from tripcluster.geocode import label_stops
 from tripcluster.model import Asset
 from tripcluster.naming import describe, heuristic_name
@@ -53,6 +53,12 @@ def main(argv: list[str] | None = None) -> int:
             return 1
 
         assets.sort(key=lambda a: a.ts_utc)
+        # Reject impossible coordinates before anything measures distance:
+        # one bad fix mid-trip fabricates two enormous legs and turns a road
+        # trip into a flight.
+        dropped = drop_impossible_fixes(assets, cfg.thresholds.outlier_min_speed_kmh)
+        if dropped:
+            log.info("%d impossible GPS fix(es) discarded", dropped)
         with_fix = sum(1 for a in assets if a.has_fix)
         filled = interpolate_missing_gps(
             assets, int(cfg.thresholds.max_interpolation_gap_hours * 3600)

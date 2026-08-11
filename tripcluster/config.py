@@ -35,22 +35,36 @@ class Thresholds:
     flight_min_speed_kmh: float = 150.0
     drive_min_speed_kmh: float = 40.0
     drive_max_speed_kmh: float = 150.0
-    # Road-feasibility test. Legs are measured great-circle, but a car drives
-    # roads: US interstate routings run about 1.2-1.3x the straight line. If
-    # covering that road distance in the elapsed time would demand a sustained
-    # average above max_sustained_road_kmh, no car did it.
+    # Road-feasibility test: could a car have covered this ground in this time?
     #
-    # This binds well before flight_min_speed_kmh does (130/1.25 = 104 km/h
-    # great-circle), so it is the test that actually fires. The margin against
-    # a genuinely fast drive is thin — see the boundary tests in
-    # tests/test_cluster.py before changing either number.
-    road_circuity_factor: float = 1.25
-    max_sustained_road_kmh: float = 130.0
+    # Legs are great-circle, but cars drive roads. 1.15 is calibrated against
+    # the real library, where long western-US legs run close to straight; the
+    # earlier 1.25 misread ordinary interstate driving as flying.
+    road_circuity_factor: float = 1.15
+    # Ceiling on sustained road speed. 150 km/h is deliberately generous — it
+    # is a "nobody did this" bound, not a cruising speed.
+    max_sustained_road_kmh: float = 150.0
+    # Driving is not sustainable indefinitely, and that is what a single speed
+    # ceiling cannot express: 130 km/h for two hours is a brisk interstate run,
+    # 130 km/h for fifteen hours is nobody. Up to drive_stint_hours a driver
+    # can be at the wheel the whole time; past that, only drive_duty_cycle of
+    # the elapsed time is drivable, the rest being fuel, food and sleep.
+    # 8 h + 0.55 ~ 13 driving hours per day, which is already a hard day.
+    drive_stint_hours: float = 8.0
+    drive_duty_cycle: float = 0.55
     long_haul_min_km: float = 100.0
-    road_trip_min_ground_fraction: float = 1.0
 
     # GPS backfill
     max_interpolation_gap_hours: float = 6.0
+    # A photo implying this speed both to and from its neighbours has a bad
+    # coordinate — real travel is fast in one direction only. Well above
+    # airliner cruise so genuine in-flight window photos are untouched.
+    outlier_min_speed_kmh: float = 1000.0
+
+    # A trip is a road trip when this share of its long-haul kilometres were
+    # covered on the ground. Not 1.0: on a 40-stop cross-country drive a single
+    # misclassified leg would otherwise flip the whole trip.
+    road_trip_min_ground_fraction: float = 0.75
 
 
 @dataclass

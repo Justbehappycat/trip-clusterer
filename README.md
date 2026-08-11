@@ -102,12 +102,25 @@ driving pace, so no `flight_min_speed_kmh` low enough to catch it leaves real
 road trips alone. What catches it is a different question — **not "was this
 fast?" but "could a car have covered this ground in this time?"**
 
-Legs are measured great-circle; roads run about 1.25x longer. 1,640 km straight
-line is ~2,050 km of road, and 2,050 km in 15 hours demands a sustained
-137 km/h. No car does that. The test is sound in the conservative direction:
-elapsed time runs from one stop's last photo to the next stop's first, so it
-*overstates* travel time, which makes the required pace a lower bound on what
-really happened.
+Answering that needs two things, and the second only became obvious against a
+real library:
+
+1. **Roads are longer than great circles** — `road_circuity_factor`, 1.15.
+2. **Driving is not sustainable indefinitely.** 110 km/h for two hours is a
+   brisk interstate run; 110 km/h for fifteen hours is nobody. A single speed
+   ceiling cannot express both, so it has to either reject ordinary interstate
+   legs or accept impossible ones. `drive_stint_hours` (8) is how long someone
+   can be at the wheel continuously; `drive_duty_cycle` (0.55) is the share of
+   the time beyond that which is actually driving rather than fuel, food and
+   sleep.
+
+Calibrating on synthetic fixtures produced 46 false flight legs on the real
+library, because the fixtures contained no interstate driving. The numbers here
+come from the library.
+
+The test is sound in the conservative direction: elapsed time runs from one
+stop's last photo to the next stop's first, so it *overstates* travel time,
+which makes the required pace a lower bound on what really happened.
 
 The third row is not a failure. 1,640 km in 22 hours is an ordinary two-day
 drive, and nothing in the photo track distinguishes it from one. For a leg this
