@@ -3,3 +3,7 @@ PyYAML>=6.0
 # Offline city-level reverse geocoding. Optional: without it, stops are named
 # by coordinates and everything else still works.
 reverse_geocoder>=1.5.1
+
+# Image analysis for the Phase 6 wall: finding the calm region of a photo
+# so the clock does not land on the subject. Not needed by the clusterer.
+Pillow>=10.0
