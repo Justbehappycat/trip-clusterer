@@ -13,7 +13,10 @@ file is the state of the build.
 ## Where the build stands
 
 **Everything server-side runs on the Synology at `192.168.1.218`. The Mac Mini
-is out of the architecture entirely** — the plan's "Mac Mini runs Immich + a
+has exactly one job left: exporting Apple's aesthetic scores** (see
+`deploy/mac/`), because the macOS Photos library is the only place they exist
+and Apple has already computed them. Otherwise the Mini is out of the
+architecture — the plan's "Mac Mini runs Immich + a
 slideshow renderer" is superseded. Immich on :2283, immich-kiosk on :3000, and
 the weekly clustering job all run there as containers; the Cubi is a display
 and nothing else. `launchd/com.tripcluster.weekly.plist` was deleted with the
@@ -28,6 +31,7 @@ Mini's role; `deploy/tripcluster/` replaces it.
 | 5 — Windows kiosk hardening | **written, untested** — `deploy/phase-5-windows-kiosk.md` |
 | 6 — Touch handoff wrapper page | not started — `tools/make_map.py` is the start of it |
 | Upkeep — weekly re-cluster | **written, not deployed** — `deploy/tripcluster/` |
+| Upkeep — weekly score export | **written, not deployed** — `deploy/mac/` |
 
 Phase 3 was developed on a MacBook Pro. The **endpoint paths are now confirmed
 against the live 3.1.0 instance** — all four exist. `parse_asset`'s response

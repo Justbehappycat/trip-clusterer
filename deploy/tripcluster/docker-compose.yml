@@ -67,6 +67,9 @@ services:
       # and holds any custom_name you have typed; losing it means duplicate
       # albums on the next run.
       - /volume1/docker/tripcluster:/state
+      # Apple's aesthetic scores, pushed weekly by the Mac Mini — see
+      # deploy/mac/. Optional: absent, the wall simply keeps every frame of
+      # every burst instead of the best one.
     working_dir: /app
     # IMPORTANT: set this in the mounted config.yaml —
     #

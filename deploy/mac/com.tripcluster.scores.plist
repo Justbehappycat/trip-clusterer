@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Weekly export of Apple's aesthetic scores from the Photos library, pushed to
+  the Synology for the clustering job to use.
+
+  Install:
+
+    mkdir -p ~/Library/LaunchAgents
+    cp deploy/mac/com.tripcluster.scores.plist ~/Library/LaunchAgents/
+    chmod +x deploy/mac/export_scores.sh
+    launchctl load ~/Library/LaunchAgents/com.tripcluster.scores.plist
+    launchctl start com.tripcluster.scores        # run once now to check
+    tail -f /tmp/tripcluster-scores.log
+
+  TWO PREREQUISITES, both one-off:
+
+  1. Full Disk Access for /usr/bin/python3, in System Settings > Privacy &
+     Security. Reading the Photos library requires it, and a background job
+     cannot prompt. This is a real grant: any Python script run on this Mac
+     gains the same access. If that is not acceptable, drop the LaunchAgent
+     and run deploy/mac/export_scores.sh by hand every few weeks instead —
+     the wall degrades gracefully, it just stops learning about new photos.
+
+  2. An SSH key to the NAS, so scp runs unattended:
+
+       ssh-keygen -t ed25519 -C tripcluster        # no passphrase
+       ssh-copy-id Luckypatcher@192.168.1.218
+
+  A LaunchAgent, not a Daemon: it runs as you, which is whose Photos library
+  this is. RunAtLoad is off — a login should not trigger a full export.
+  StartCalendarInterval fires Sundays at 01:30, a couple of hours before the
+  NAS rebuilds the wall, and launchd runs a missed job when the Mac next wakes.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.tripcluster.scores</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/sh</string>
+        <!-- Edit if the repo lives elsewhere. -->
+        <string>/Users/miniq/Trip-plan/deploy/mac/export_scores.sh</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>REPO</key>
+        <string>/Users/miniq/Trip-plan</string>
+        <key>NAS</key>
+        <string>Luckypatcher@192.168.1.218</string>
+        <key>NAS_PATH</key>
+        <string>/volume1/docker/tripcluster/apple_scores.json</string>
+    </dict>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Weekday</key><integer>0</integer>
+        <key>Hour</key><integer>1</integer>
+        <key>Minute</key><integer>30</integer>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/tripcluster-scores.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/tripcluster-scores.log</string>
+</dict>
+</plist>

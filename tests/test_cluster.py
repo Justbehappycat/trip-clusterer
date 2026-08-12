@@ -24,6 +24,9 @@ from tripcluster.geo import (  # noqa: E402
 from tripcluster.geocode import _nearby_major_city, _reach_km  # noqa: E402
 from tripcluster.model import Asset, Home, Stop, Trip  # noqa: E402
 from tripcluster.naming import describe, heuristic_name  # noqa: E402
+from tripcluster.quality import (  # noqa: E402
+    Scores, composite, group_bursts, pick_best,
+)
 from tripcluster.store import Store  # noqa: E402
 
 HOME = (34.0522, -118.2437)     # Los Angeles
@@ -632,3 +635,48 @@ def test_reach_grows_with_population_but_is_capped():
     assert _reach_km(3_000_000, 10.0) > 25.0
     assert _reach_km(50_000_000, 10.0) == 40.0          # capped
     assert _reach_km(50_000, 10.0) == pytest.approx(10.0)   # floor at 100k
+
+
+# ---- quality scores --------------------------------------------------------
+
+def test_scores_disambiguate_recycled_filenames():
+    """iPhones reuse IMG_1234. Matching on name alone put the wrong score on
+    one wall photo in five, so the timestamp has to decide."""
+    rows = [
+        {"name": "IMG_1234.HEIC", "ts_utc": 1_000_000, "ZOVERALLAESTHETICSCORE": 0.9},
+        {"name": "IMG_1234.HEIC", "ts_utc": 2_000_000, "ZOVERALLAESTHETICSCORE": 0.1},
+    ]
+    s = Scores(rows)
+    assert s.overall("IMG_1234.HEIC", 1_000_030) == 0.9
+    assert s.overall("IMG_1234.HEIC", 2_000_030) == 0.1
+    # Too far from either: better no score than a wrong one.
+    assert s.overall("IMG_1234.HEIC", 5_000_000) is None
+    assert s.overall("IMG_9999.HEIC", 1_000_000) is None
+
+
+def test_bursts_group_by_time_and_keep_the_best_frame():
+    rows = [
+        {"name": "a.HEIC", "ts_utc": 100, "ZOVERALLAESTHETICSCORE": 0.2},
+        {"name": "b.HEIC", "ts_utc": 130, "ZOVERALLAESTHETICSCORE": 0.8},
+        {"name": "c.HEIC", "ts_utc": 160, "ZOVERALLAESTHETICSCORE": 0.4},
+        {"name": "d.HEIC", "ts_utc": 9999, "ZOVERALLAESTHETICSCORE": 0.5},
+    ]
+    items = [{"name": r["name"], "ts_utc": r["ts_utc"]} for r in rows]
+    groups = group_bursts(items, within_seconds=60)
+    assert [len(g) for g in groups] == [3, 1]
+
+    s = Scores(rows)
+    assert pick_best(groups[0], s)["name"] == "b.HEIC"     # highest scoring
+    assert pick_best(groups[1], s)["name"] == "d.HEIC"
+
+
+def test_an_unscored_burst_still_yields_a_photo():
+    """No score is a reason to pick arbitrarily, not to drop the group."""
+    items = [{"name": "x.HEIC", "ts_utc": 10}, {"name": "y.HEIC", "ts_utc": 20}]
+    assert pick_best(items, Scores([]))["name"] == "x.HEIC"
+
+
+def test_penalties_lower_the_composite():
+    clean = {"ZOVERALLAESTHETICSCORE": 0.5}
+    noisy = {"ZOVERALLAESTHETICSCORE": 0.5, "ZNOISESCORE": 1.0, "ZLOWLIGHT": 1.0}
+    assert composite(noisy) < composite(clean)

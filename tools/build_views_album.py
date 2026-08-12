@@ -43,12 +43,16 @@ from __future__ import annotations
 
 import argparse
 import sys
+from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from tripcluster.config import load_config                  # noqa: E402
 from tripcluster.immich import ImmichClient, ImmichError     # noqa: E402
+from tripcluster.quality import (  # noqa: E402
+    Scores, composite, group_bursts, pick_best,
+)
 from tripcluster.store import Store                          # noqa: E402
 
 # Unioned rather than blended: one prompt cannot cover a desert overlook and a
@@ -82,6 +86,12 @@ def main() -> int:
     ap.add_argument("--album-name", default=ALBUM_NAME)
     ap.add_argument("--exclude-album", default=EXCLUDE_ALBUM_NAME,
                     help="album of photos to keep off the wall permanently")
+    ap.add_argument("--scores", default="apple_scores.json",
+                    help="Apple aesthetic scores from tools/apple_scores.py")
+    ap.add_argument("--burst-seconds", type=int, default=90,
+                    help="photos this close together are one burst; 0 disables")
+    ap.add_argument("--min-score", type=float, default=None,
+                    help="drop photos below this overall aesthetic score")
     ap.add_argument("--allow-portrait", action="store_true",
                     help="keep portrait photos (they pillarbox on a landscape screen)")
     args = ap.parse_args()
@@ -165,6 +175,48 @@ def main() -> int:
     for why, items in sorted(rejected.items(), key=lambda kv: -len(kv[1])):
         print(f"  -{len(items):5d}  {why}")
     print(f"  ={len(chosen):5d}  landscape stills without faces")
+
+    # ---- Apple's judgement, if it has been exported ----------------------
+    scores = Scores.load(args.scores)
+    if len(scores):
+        def keyed(it):
+            ex = it.get("exifInfo") or {}
+            dto = ex.get("dateTimeOriginal") or it.get("fileCreatedAt") or ""
+            ts = None
+            if dto:
+                try:
+                    ts = int(datetime.fromisoformat(
+                        dto.replace("Z", "+00:00")).timestamp())
+                except ValueError:
+                    ts = None
+            return {"asset": it, "name": it.get("originalFileName", ""), "ts_utc": ts}
+
+        keyeditems = [keyed(it) for it in chosen]
+        have = sum(1 for k in keyeditems
+                   if scores.for_asset(k["name"], k["ts_utc"]) is not None)
+        print(f"\n{len(scores)} Apple scores loaded; {have}/{len(chosen)} "
+              f"wall photos matched")
+
+        if args.min_score is not None:
+            before = len(keyeditems)
+            keyeditems = [
+                k for k in keyeditems
+                if (scores.overall(k["name"], k["ts_utc"]) or 0.0) >= args.min_score
+            ]
+            print(f"  -{before - len(keyeditems):5d}  below {args.min_score} overall")
+
+        if args.burst_seconds > 0:
+            groups = group_bursts(keyeditems, args.burst_seconds)
+            repeats = sum(len(g) - 1 for g in groups)
+            keyeditems = [pick_best(g, scores) for g in groups]
+            print(f"  -{repeats:5d}  near-repeats "
+                  f"({len(groups)} bursts, best frame kept)")
+
+        chosen = [k["asset"] for k in keyeditems]
+        print(f"  ={len(chosen):5d}  on the wall")
+    elif args.scores:
+        print(f"\nno Apple scores at {args.scores} — run tools/apple_scores.py "
+              f"on the Mac to rank by quality and thin out near-repeats")
 
     if args.scenic_only:
         # Smart search caps at 40 per query and cannot paginate, so it can

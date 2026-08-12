@@ -45,7 +45,8 @@ run_once() {
     echo "=== $(date -u '+%Y-%m-%dT%H:%M:%SZ') rebuilding Views album"
     # Only reached when clustering succeeded: rebuilding Views from a
     # half-updated trips.db would drop photos off the wall.
-    python tools/build_views_album.py --config "$CONFIG" --apply >> "$LOG" 2>&1
+    python tools/build_views_album.py --config "$CONFIG" \
+        --scores /state/apple_scores.json --apply >> "$LOG" 2>&1
     rc=$?
     tail -n 12 "$LOG"
     [ "$rc" -ne 0 ] && return 2
