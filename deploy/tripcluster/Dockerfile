@@ -21,6 +21,7 @@ COPY tools/ ./tools/
 COPY mapdata/ ./mapdata/
 COPY cluster_trips.py ./
 COPY deploy/tripcluster/run.sh /usr/local/bin/run.sh
+COPY deploy/tripcluster/notify.py /usr/local/bin/notify.py
 RUN chmod +x /usr/local/bin/run.sh
 
 # config.yaml and trips.db are mounted, not baked: config carries your homes,

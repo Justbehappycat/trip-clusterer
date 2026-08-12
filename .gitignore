@@ -7,3 +7,5 @@ fixtures/*.json
 .pytest_cache/
 logs/
 map.html
+config.synology.yaml
+.DS_Store

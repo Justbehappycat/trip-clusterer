@@ -1,7 +1,15 @@
 # Weekly trip clustering on the Synology. Replaces the Mac Mini LaunchAgent —
 # the Mini is no longer in the architecture.
 #
-# Set up, once, over SSH:
+# The repo is public, so the NAS can fetch it directly — no scp round trip:
+#
+#     cd /volume1/docker
+#     curl -sL https://github.com/Justbehappycat/trip-clusterer/archive/refs/heads/main.tar.gz | tar xz
+#     rm -rf trip-clusterer && mv trip-clusterer-main trip-clusterer
+#
+# Re-run that to pick up changes, then rebuild.
+#
+# Set up the runtime files once, over SSH:
 #
 #     mkdir -p /volume1/docker/tripcluster
 #     chmod 700 /volume1/docker/tripcluster
@@ -38,6 +46,18 @@ services:
       # Weekly. The loop runs once at start, so restarting the container is
       # also how you force a pass.
       RUN_INTERVAL_SECONDS: "604800"
+      # Failure notification. Optional — leave NOTIFY_URL unset and nothing is
+      # sent. Without it a broken run is only visible in `docker logs`, which
+      # means the wall can quietly stop gaining photos for months.
+      #
+      # Any webhook that accepts a POST works. ntfy.sh needs no account:
+      #   NOTIFY_URL: "https://ntfy.sh/pick-something-unguessable"
+      # NOTIFY_FORMAT: text (default) | slack | discord
+      #
+      # Note the topic in an ntfy URL is effectively a password — anyone who
+      # knows it can read your notifications. Pick something random.
+      NOTIFY_URL: ""
+      NOTIFY_FORMAT: "text"
     secrets:
       - immich_api_key
     volumes:
