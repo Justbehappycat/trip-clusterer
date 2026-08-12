@@ -145,6 +145,20 @@ gave 46 false flight legs, because no fixture contained interstate driving.
   this worth looking at from across the room". 65% of the library is portrait
   and would pillarbox on the landscape screen, which is the biggest single
   filter. Rebuild the album after new trips land.
+- **Stops are named for the nearest *major* city, when there is one close.**
+  GeoNames' cities1000 list — which `reverse_geocoder` and Immich both derive
+  from — names a point by the nearest populated place, and in dense countries
+  that is a subdistrict nobody recognises: Lanzhou came back as "Xihu", Xi'an
+  as "Baqiao", Ningbo as "Yinjiang", Las Vegas as "Winchester". Immich's own
+  geocoding has the identical problem, so switching to it fixes nothing.
+  `mapdata/major_cities.csv` holds GeoNames places over 100k; a stop takes the
+  nearest one whose *reach* covers it, where reach scales with the cube root
+  of population (10 km at 100k, ~28 km at 3M, capped at 40 km). A fixed radius
+  cannot work: 30 km captures Xi'an's districts and also renames Beaumont, CA
+  to Moreno Valley. Nearest wins over largest, or Rancho Cucamonga becomes
+  Fontana; candidates are restricted to the same country, or Fort Bliss
+  becomes Ciudad Juárez; and the region is taken from the substituted city, or
+  Hoboken becomes "New York City, NJ".
 - **`homes:` — more than one home, and homes with dates.** The plan assumes a
   single fixed point. The real library has three: Orange County, then Los
   Angeles after a move, plus a concurrent second home in Dalian. With one point

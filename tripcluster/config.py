@@ -54,6 +54,10 @@ class Thresholds:
     drive_duty_cycle: float = 0.55
     long_haul_min_km: float = 100.0
 
+    # Stop naming: how far a 100k-population city's name reaches from its
+    # centre point, scaled up by population. See geocode._reach_km.
+    major_city_base_km: float = 10.0
+
     # GPS backfill
     max_interpolation_gap_hours: float = 6.0
     # A photo implying this speed both to and from its neighbours has a bad

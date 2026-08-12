@@ -21,6 +21,7 @@ from tripcluster.config import Thresholds  # noqa: E402
 from tripcluster.geo import (  # noqa: E402
     centroid, drop_impossible_fixes, haversine_km, interpolate_missing_gps,
 )
+from tripcluster.geocode import _nearby_major_city, _reach_km  # noqa: E402
 from tripcluster.model import Asset, Home, Stop, Trip  # noqa: E402
 from tripcluster.naming import describe, heuristic_name  # noqa: E402
 from tripcluster.store import Store  # noqa: E402
@@ -599,3 +600,35 @@ def test_unrelated_trips_do_not_collide(store):
     b = make_trip(prefix="z")
     store.hydrate(b)
     assert b.trip_id is None
+
+
+# ---- stop naming -----------------------------------------------------------
+
+def test_a_district_is_named_for_the_city_it_is_in():
+    """GeoNames names a point by nearest populated place, which in dense
+    countries is a subdistrict nobody recognises. Real cases from the library:
+    Lanzhou came back as "Xihu", Xi'an as "Baqiao", Ningbo as "Yinjiang"."""
+    assert _nearby_major_city(36.0611, 103.7500, 10.0, "CN")[0] == "Lanzhou"
+    assert _nearby_major_city(34.2700, 109.0700, 10.0, "CN")[0] == "Xi’an"
+
+
+def test_a_small_town_far_from_a_city_keeps_its_own_name():
+    """Estes Park and Kanab are exactly the right names; the nearest 100k
+    city is 60+ km from both, so nothing should replace them."""
+    assert _nearby_major_city(40.3772, -105.5217, 10.0, "US") is None   # Estes Park
+    assert _nearby_major_city(37.0475, -112.5263, 10.0, "US") is None   # Kanab
+
+
+def test_the_city_name_never_crosses_a_border():
+    """Fort Bliss is in El Paso. Ciudad Juárez is larger and closer than some
+    US candidates, and on the other side of an international border."""
+    assert _nearby_major_city(31.8113, -106.4211, 10.0, "US")[0] == "El Paso"
+
+
+def test_reach_grows_with_population_but_is_capped():
+    """One radius cannot serve both: 30 km captures Xi'an's districts and also
+    renames Beaumont, California to Moreno Valley."""
+    assert _reach_km(100_000, 10.0) == pytest.approx(10.0)
+    assert _reach_km(3_000_000, 10.0) > 25.0
+    assert _reach_km(50_000_000, 10.0) == 40.0          # capped
+    assert _reach_km(50_000, 10.0) == pytest.approx(10.0)   # floor at 100k

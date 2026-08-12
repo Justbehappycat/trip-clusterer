@@ -69,7 +69,8 @@ def main(argv: list[str] | None = None) -> int:
         )
 
         trips = build_trips(assets, cfg.home, cfg.thresholds)
-        label_stops([s for t in trips for s in t.stops], cfg.geocoder)
+        label_stops([s for t in trips for s in t.stops], cfg.geocoder,
+                    cfg.thresholds.major_city_base_km)
 
         for trip in trips:
             trip.heuristic_name = heuristic_name(trip, cfg.album_prefix)
