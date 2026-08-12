@@ -8,16 +8,26 @@ the trip photos, filtered on what the wall actually cares about.
 Selection is by metadata, which is exhaustive; smart search only *narrows* it.
 That split matters: Immich caps smart search at 40 results per query with no
 pagination, so it can never enumerate a library — using it as the selector
-yielded 57 photos where the metadata filter finds 722.
+yielded 57 photos where the metadata filter finds 651.
 
 Filters, in order of how much they remove from the 2,552 trip photos:
 
-1. **Landscape orientation** (−952). 65% of this library is portrait, and a
+1. **Landscape orientation** (−800). 65% of this library is portrait, and a
    portrait photo on a landscape screen shows pillarboxed against a blurred
    fill. The single biggest lever on how the wall looks.
 2. **Stills only** (−706). Live Photo videos and real videos alike.
-3. **No detected face** (−172). Only 7% of the library has one, so this is
-   nearly free — but it is what keeps portraits of people off the wall.
+3. **From a camera** (−256). No exifInfo.make means a screenshot, a saved
+   image or a download. These reach the trip albums legitimately, because
+   interpolate_missing_gps gives a screenshot taken mid-trip a position from
+   its neighbours — right for "what happened on this trip", wrong for a wall.
+4. **No detected face** (−132), and **a real GPS fix** rather than an
+   interpolated guess (−7).
+
+What none of this catches: a photograph *of* a screen, a receipt or a
+whiteboard. Camera make, real GPS, no face, landscape — indistinguishable
+from scenery by metadata, and Immich 3.1.0 exposes neither a smart-search
+similarity score nor OCR text, so nothing here can separate them. That is
+what the "Views: excluded" album is for.
 
 `--scenic-only` additionally intersects with Immich's CLIP index across
 several prompts, unioned because one prompt cannot cover a desert overlook and
@@ -54,6 +64,13 @@ PROMPTS = [
 
 ALBUM_NAME = "Views"
 
+# Your veto. Some photos pass every automatic test and still do not belong on
+# a wall — a landscape photo of a television, a receipt, a whiteboard. They
+# have a camera make, real GPS, no face and landscape dimensions, and Immich
+# 3.1.0 exposes no similarity score and no OCR text, so nothing here can tell
+# them from scenery. Put them in this album and they stay off the wall.
+EXCLUDE_ALBUM_NAME = "Views: excluded"
+
 
 def main() -> int:
     ap = argparse.ArgumentParser()
@@ -63,6 +80,8 @@ def main() -> int:
     ap.add_argument("--scenic-only", action="store_true",
                     help="also require a match against Immich's scenery search")
     ap.add_argument("--album-name", default=ALBUM_NAME)
+    ap.add_argument("--exclude-album", default=EXCLUDE_ALBUM_NAME,
+                    help="album of photos to keep off the wall permanently")
     ap.add_argument("--allow-portrait", action="store_true",
                     help="keep portrait photos (they pillarbox on a landscape screen)")
     args = ap.parse_args()
@@ -80,13 +99,41 @@ def main() -> int:
         trip_ids = {
             r[0] for r in store.db.execute("SELECT DISTINCT asset_id FROM trip_assets")
         }
+    def album_members(name: str) -> set:
+        """Every asset id in a named album, or an empty set if there is none."""
+        album = next((a for a in client._request("GET", "/api/albums")
+                      if a.get("albumName") == name), None)
+        if not album:
+            return set()
+        ids, page = set(), 1
+        while True:
+            r = client._request("POST", cfg.api.search_assets, json={
+                "albumIds": [album["id"]], "page": page, "size": 1000})
+            a = r.get("assets") or {}
+            got = a.get("items") or []
+            if not got:
+                break
+            ids.update(i["id"] for i in got)
+            nxt = a.get("nextPage")
+            if not nxt:
+                break
+            page = int(nxt)
+        return ids
+
+    excluded = album_members(args.exclude_album)
     print(f"{len(trip_ids)} photos belong to a trip")
+    if excluded:
+        print(f"{len(excluded)} vetoed via the \"{args.exclude_album}\" album")
     if not trip_ids:
         print("No trips recorded. Run cluster_trips.py first.", file=sys.stderr)
         return 1
 
     def keep(it: dict) -> tuple[bool, str]:
         ex = it.get("exifInfo") or {}
+        # Checked first so the count reflects your veto, not a coincidence of
+        # some other rule also rejecting it.
+        if it["id"] in excluded:
+            return False, "vetoed by hand"
         if (it.get("type") or "IMAGE") != "IMAGE":
             return False, "not a still"
         # No camera make means it did not come out of a camera: screenshots,
