@@ -21,8 +21,8 @@ architecture at all.
 | Phase | Status |
 |---|---|
 | 1 — Immich on the Synology | **done** — v3.1.0 |
-| 2 — Photo import, GPS verified | **in progress** — iPhone backing up, ~16K assets and climbing; GPS coverage not yet verified |
-| 3 — Trip clusterer | **built, tested against synthetic data only** |
+| 2 — Photo import, GPS verified | **done** — 17,283 timeline assets, 8,486 with GPS (~51%) |
+| 3 — Trip clusterer | **applied** — 16 albums created in Immich, 8 labelled road trips |
 | 4 — immich-kiosk slideshow | not started |
 | 5 — Windows kiosk hardening | not started |
 | 6 — Touch handoff wrapper page | not started |
@@ -49,16 +49,20 @@ Confirmed present on 3.1.0: `POST /api/search/metadata`, `POST /api/albums`,
 `duplicateDetection`, `map` and `reverseGeocoding` all true — the ML needed to
 filter people out of the slideshow is available.
 
-Remaining before the first real run, in this order:
+Everything below `immich.py` has now been calibrated against the real library.
+Three defects only that data could expose, in the order they were found:
 
-1. Let the iPhone backup finish. Trip boundaries and `find_home.py`'s density
-   estimate both shift while assets are still arriving.
-2. Verify GPS coverage across the library. If location is being stripped,
-   `segment_trips` silently filters everything out and returns zero trips —
-   there is no error to notice.
-3. `tools/find_home.py` to get real home coordinates into `config.yaml`.
-4. Dry runs until the albums look right. Expect two or three rounds.
-5. Only then `--apply`.
+1. **`withExif` was never sent.** 3.1.0 omits the whole exifInfo block unless
+   asked, so every asset arrived with a timestamp and no coordinates, and the
+   pipeline would have found zero trips without raising anything.
+2. **Live Photo video halves were counted as photos.** 23% of the library is
+   `type=VIDEO visibility=hidden`; Immich excludes them from album counts, so
+   173 photos sent read as 110 on the server.
+3. **Legs measured centroid-to-centroid.** See below.
+
+`tools/gps_audit.py`, `tools/inspect_asset_shape.py` and
+`tools/inspect_outliers.py` exist because of these — all read-only, all safe to
+re-run when something looks wrong.
 
 ## Open defects
 
@@ -121,16 +125,16 @@ that reach these tests are precisely the ones with nothing to consult.
 whether flown or driven, so it only restates east-west displacement, which
 `haversine_km` already gives.
 
-Still measured against synthetic fixtures only. How often either limit matters
-is a question for dry runs against the real library.
+Calibrated against the real library, not fixtures. The synthetic suite alone
+gave 46 false flight legs, because no fixture contained interstate driving.
 
 ## Deliberate deviations from the plan
 
 - `stop_gap_hours` defaults to **30**, not the plan's 12. At 12 an overnight with
   no photos opens a new stop, so a four-day stay in one city reads as four stops.
-- Added `road_trip_min_ground_fraction`. At the default 1.0 it is the plan's
-  strict "all long-haul legs are ground" rule; lowering it to ~0.5 also admits
-  fly-out-then-drive trips, which the strict rule misses.
+- Added `road_trip_min_ground_fraction`, now **0.75**, not the plan's strict
+  "all long-haul legs are ground" rule. At 1.0 a single misclassified leg out
+  of forty flipped an obvious cross-country drive to a plain trip.
 - Trips begin at the first *away* stop. If home is Los Angeles, an LA→NY drive
   names itself "Las Vegas → New York". Correct by definition, but not what the
   plan's example name implies.
