@@ -239,6 +239,8 @@ def test_search_requests_exif_and_gets_coordinates(client):
 
     posts = [c for c in Stub.calls if c[1] == "/api/search/metadata"]
     assert posts and all(c[2].get("withExif") is True for c in posts)
+    # Same trap, same fix: without withPeople every asset reports nobody in it.
+    assert all(c[2].get("withPeople") is True for c in posts)
 
 
 def test_pagination_stops_at_the_last_page(client):

@@ -23,8 +23,8 @@ architecture at all.
 | 1 — Immich on the Synology | **done** — v3.1.0 |
 | 2 — Photo import, GPS verified | **done** — 17,283 timeline assets, 8,486 with GPS (~51%) |
 | 3 — Trip clusterer | **applied** — 16 albums created in Immich, 8 labelled road trips |
-| 4 — immich-kiosk slideshow | not started |
-| 5 — Windows kiosk hardening | not started |
+| 4 — immich-kiosk slideshow | **config written**, not yet deployed — `deploy/kiosk/docker-compose.yml` |
+| 5 — Windows kiosk hardening | **written, untested** — `deploy/phase-5-windows-kiosk.md` |
 | 6 — Touch handoff wrapper page | not started |
 
 Phase 3 was developed on a MacBook Pro. The **endpoint paths are now confirmed
@@ -138,6 +138,13 @@ gave 46 false flight legs, because no fixture contained interstate driving.
 - Trips begin at the first *away* stop. If home is Los Angeles, an LA→NY drive
   names itself "Las Vegas → New York". Correct by definition, but not what the
   plan's example name implies.
+- **A curated `Views` album feeds the wall, not the trip albums.** Album
+  `ce8df127-f644-459a-b39a-5cc41c8d3a75`, built by
+  `tools/build_views_album.py`: 722 landscape stills from trip photos with no
+  detected face. The trip albums answer "where did I go"; a wall needs "is
+  this worth looking at from across the room". 65% of the library is portrait
+  and would pillarbox on the landscape screen, which is the biggest single
+  filter. Rebuild the album after new trips land.
 - **`homes:` — more than one home, and homes with dates.** The plan assumes a
   single fixed point. The real library has three: Orange County, then Los
   Angeles after a move, plus a concurrent second home in Dalian. With one point

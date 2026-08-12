@@ -186,10 +186,15 @@ class ImmichClient:
             # no coordinates, and the clusterer finds zero trips without
             # raising anything. Verified against 3.1.0, where the search
             # response carries 28 keys and none of them is a coordinate.
+            # withPeople is the same trap as withExif: omit it and every asset
+            # comes back with an empty people list, which reads as "nobody in
+            # any photo" rather than "you didn't ask". 7% of this library has
+            # a detected face.
             body: dict[str, Any] = {
                 "page": page,
                 "size": self.cfg.page_size,
                 "withExif": True,
+                "withPeople": True,
             }
             if updated_after:
                 body["updatedAfter"] = updated_after

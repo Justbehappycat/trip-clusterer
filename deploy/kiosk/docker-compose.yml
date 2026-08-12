@@ -1,0 +1,80 @@
+# Phase 4 — immich-kiosk on the Synology, beside Immich.
+#
+# Deploy with Container Manager (Project > Create > upload this file) or, over
+# SSH, `docker compose up -d` from this directory.
+#
+# The API key is NOT in this file. Create /volume1/docker/kiosk/immich_api_key
+# containing just the key, readable only by the owner:
+#
+#     mkdir -p /volume1/docker/kiosk
+#     printf '%s' 'PASTE_KEY_HERE' > /volume1/docker/kiosk/immich_api_key
+#     chmod 600 /volume1/docker/kiosk/immich_api_key
+#
+# Use a key generated specifically for Kiosk, so revoking it cannot disturb
+# anything else.
+
+services:
+  immich-kiosk:
+    image: ghcr.io/damongolding/immich-kiosk:latest
+    container_name: immich-kiosk
+    # Pin this once it works. Kiosk is the thing on the wall; an unattended
+    # :latest pull that changes behaviour is a bad way to find out.
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    secrets:
+      - immich_api_key
+    environment:
+      TZ: "America/Los_Angeles"
+
+      # ---- connection ----------------------------------------------------
+      # Must include the port. This is the Synology's own address rather than
+      # localhost, because the two containers are on separate networks unless
+      # you deliberately join them.
+      KIOSK_IMMICH_URL: "http://192.168.1.218:2283"
+      KIOSK_IMMICH_API_KEY_FILE: /run/secrets/immich_api_key
+
+      # ---- what to show --------------------------------------------------
+      # The curated "Views" album: 722 landscape stills from trips, no faces.
+      # Rebuild it with tools/build_views_album.py after new trips land.
+      KIOSK_ALBUMS: "ce8df127-f644-459a-b39a-5cc41c8d3a75"
+
+      # ---- pacing --------------------------------------------------------
+      # 60s is the default and too brisk for an ambient display — it reads as
+      # a screensaver rather than something you glance at.
+      KIOSK_DURATION: "120"
+      KIOSK_TRANSITION: "cross-fade"
+      KIOSK_CROSS_FADE_TRANSITION_DURATION: "2"
+
+      # ---- appearance ----------------------------------------------------
+      # All 722 are landscape on a landscape screen, so "cover" fills without
+      # cropping anything meaningful. Blur stays on as insurance for any
+      # non-matching aspect ratio that slips through.
+      KIOSK_IMAGE_FIT: "cover"
+      KIOSK_BACKGROUND_BLUR: "true"
+
+      # No mouse is attached; a stranded cursor on a photo wall looks broken.
+      KIOSK_HIDE_CURSOR: "true"
+
+      # Leave the clock and metadata ON for now: Phase 6 replaces this layer
+      # with the touch wrapper, and until then the date/place caption is the
+      # only context you get.
+      KIOSK_DISABLE_UI: "false"
+
+      # Do NOT set KIOSK_DISABLE_NAVIGATION: it disables touch entirely, which
+      # is the opposite of what this screen is for.
+
+      # ---- panel care ----------------------------------------------------
+      # A photo wall shows static overlays for months. Dim them periodically.
+      KIOSK_BURN_IN_INTERVAL: "600"
+      KIOSK_BURN_IN_DURATION: "30"
+      KIOSK_BURN_IN_OPACITY: "30"
+
+      # Note: KIOSK_DISABLE_SCREENSAVER requires HTTPS to work — the browser
+      # only grants a wake lock on a secure origin. Over plain HTTP on the LAN
+      # it will silently do nothing, so the Cubi's own power settings are what
+      # actually keep the screen awake. See phase-5-windows-kiosk.md.
+
+secrets:
+  immich_api_key:
+    file: /volume1/docker/kiosk/immich_api_key
