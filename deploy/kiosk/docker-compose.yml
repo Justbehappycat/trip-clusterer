@@ -4,11 +4,25 @@
 # SSH, `docker compose up -d` from this directory.
 #
 # The API key is NOT in this file. Create /volume1/docker/kiosk/immich_api_key
-# containing just the key, readable only by the owner:
+# containing just the key:
 #
 #     mkdir -p /volume1/docker/kiosk
+#     chmod 700 /volume1/docker/kiosk
 #     printf '%s' 'PASTE_KEY_HERE' > /volume1/docker/kiosk/immich_api_key
-#     chmod 600 /volume1/docker/kiosk/immich_api_key
+#     chmod 644 /volume1/docker/kiosk/immich_api_key
+#
+# 644, not 600. Compose file-secrets are bind-mounted with the host file's
+# permissions intact, and this image runs as a non-root user, so 600 gives:
+#
+#     ERRO Failed to read secret file file=/run/secrets/immich_api_key
+#          error="open /run/secrets/immich_api_key: permission denied"
+#
+# The 700 on the *directory* is what keeps other host users out — the Docker
+# daemon is root, so it traverses the directory regardless, and only the
+# file's own mode governs what the container user can read.
+#
+# printf, not echo: echo appends a newline, which Kiosk would send as part of
+# the header value and Immich would reject.
 #
 # Use a key generated specifically for Kiosk, so revoking it cannot disturb
 # anything else.

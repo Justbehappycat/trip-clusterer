@@ -23,7 +23,7 @@ architecture at all.
 | 1 — Immich on the Synology | **done** — v3.1.0 |
 | 2 — Photo import, GPS verified | **done** — 17,283 timeline assets, 8,486 with GPS (~51%) |
 | 3 — Trip clusterer | **applied** — 16 albums created in Immich, 8 labelled road trips |
-| 4 — immich-kiosk slideshow | **config written**, not yet deployed — `deploy/kiosk/docker-compose.yml` |
+| 4 — immich-kiosk slideshow | **running** on the Synology, port 3000, Kiosk 0.42.0 — verified serving real photos from the Views album |
 | 5 — Windows kiosk hardening | **written, untested** — `deploy/phase-5-windows-kiosk.md` |
 | 6 — Touch handoff wrapper page | not started |
 
