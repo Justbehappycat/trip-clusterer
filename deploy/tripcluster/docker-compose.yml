@@ -79,6 +79,35 @@ services:
     # directory, which here is /config — and only config.yaml is mounted
     # there, so the write fails. It must be the absolute /state path.
 
+  # The wall itself. Same image, different entrypoint — it shares the config
+  # and the API key, and there is no sense maintaining two Dockerfiles.
+  #
+  # Replaces immich-kiosk: Kiosk gives no control over where the clock sits,
+  # and the lock-screen layout is the entire point. Point the Cubi at
+  # http://192.168.1.218:4000, then stop the immich-kiosk container.
+  wall:
+    build:
+      context: ../..
+      dockerfile: deploy/tripcluster/Dockerfile
+    container_name: wall
+    restart: unless-stopped
+    entrypoint: ["python", "tools/wall_server.py"]
+    command: ["--config", "/config/config.yaml", "--album", "Views",
+              "--port", "4000", "--cache", "/state/wall.db"]
+    ports:
+      - "4000:4000"
+    environment:
+      TZ: "America/Los_Angeles"
+      IMMICH_API_KEY_FILE: /run/secrets/immich_api_key
+    secrets:
+      - immich_api_key
+    volumes:
+      - /volume1/docker/tripcluster/config.yaml:/config/config.yaml:ro
+      # wall.db caches each photo's brightness and detail, measured once.
+      # Losing it costs a re-analysis pass, not correctness.
+      - /volume1/docker/tripcluster:/state
+    working_dir: /app
+
 secrets:
   immich_api_key:
     file: /volume1/docker/tripcluster/immich_api_key

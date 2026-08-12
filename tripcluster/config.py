@@ -193,7 +193,19 @@ def load_config(path: str | Path) -> Config:
 
     api = _subset(ApiConfig, raw.get("api", {}))
     # The API key lives in the environment so config.yaml stays committable.
-    api.key = os.environ.get("IMMICH_API_KEY", api.key)
+    # IMMICH_API_KEY_FILE is the container form — a Docker secret is a file,
+    # and reading it here means every entry point gets it, not just the ones
+    # that happen to go through a shell wrapper.
+    key_file = os.environ.get("IMMICH_API_KEY_FILE", "")
+    if not os.environ.get("IMMICH_API_KEY") and key_file:
+        try:
+            # Immich rejects a key with a trailing newline: it is sent verbatim
+            # as a header value.
+            api.key = Path(key_file).read_text().strip()
+        except OSError as e:
+            raise ValueError(f"cannot read IMMICH_API_KEY_FILE {key_file}: {e}") from e
+    else:
+        api.key = os.environ.get("IMMICH_API_KEY", api.key)
     api.base_url = os.environ.get("IMMICH_BASE_URL", api.base_url).rstrip("/")
 
     state_db = Path(raw.get("state_db", "trips.db")).expanduser()

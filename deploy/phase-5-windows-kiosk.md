@@ -3,7 +3,11 @@
 Goal: power on, and the wall is showing photos. No login prompt, no taskbar,
 no screen blanking, no update reboot at 3am leaving a desktop on the wall.
 
-Target URL: `http://192.168.1.218:3000` (immich-kiosk on the Synology).
+Target URL: `http://192.168.1.218:4000` — the **wall** container.
+
+(Port 3000 was immich-kiosk, which this replaces. Kiosk offers no control over
+where the clock sits, and the lock-screen layout is the point. Stop that
+container once the wall is up: `sudo docker stop immich-kiosk`.)
 
 **None of this has been tested** — it was written against Windows behaviour,
 not against your Cubi. Work through it in order and expect one or two things
@@ -14,10 +18,10 @@ to need adjusting.
 ## 1. Check the URL works at all
 
 Before automating anything, open Edge on the Cubi and go to
-`http://192.168.1.218:3000`. You should get the slideshow.
+`http://192.168.1.218:4000`. You should get the slideshow.
 
 If not, the problem is Phase 4, not this document — check the container is
-running and that the Synology firewall allows 3000 on the LAN.
+running and that the Synology firewall allows 4000 on the LAN.
 
 ## 2. Auto-login
 
@@ -59,9 +63,9 @@ Also disable the screensaver, which is separate from power settings:
 reg add "HKCU\Control Panel\Desktop" /v ScreenSaveActive /t REG_SZ /d 0 /f
 ```
 
-Kiosk's own `KIOSK_DISABLE_SCREENSAVER` will **not** help here: the browser
-wake-lock API requires a secure origin, and you are on plain HTTP over the
-LAN. It fails silently. These OS settings are what actually keep the panel on.
+A browser wake lock cannot help here: that API requires a secure origin, and
+you are on plain HTTP over the LAN. These OS settings are what actually keep
+the panel on.
 
 ## 4. Launch Edge in kiosk mode at logon
 
@@ -74,7 +78,7 @@ Create a task: **At log on**, action **Start a program**:
 - Arguments:
 
 ```
---kiosk http://192.168.1.218:3000 --edge-kiosk-type=fullscreen --no-first-run --disable-features=TranslateUI --disable-pinch --overscroll-history-navigation=0 --kiosk-idle-timeout-minutes=0
+--kiosk http://192.168.1.218:4000 --edge-kiosk-type=fullscreen --no-first-run --disable-features=TranslateUI --disable-pinch --overscroll-history-navigation=0 --kiosk-idle-timeout-minutes=0
 ```
 
 What each one is for:
@@ -120,13 +124,14 @@ a first-run screen.
 
 ## Known gaps
 
-- **HTTPS.** Everything here is plain HTTP on the LAN, which is why the wake
-  lock doesn't work. If you later put a reverse proxy with a certificate in
-  front of Kiosk, `KIOSK_DISABLE_SCREENSAVER: "true"` becomes useful and step 3
-  becomes belt-and-braces.
-- **Touch handoff.** Tapping currently does whatever Kiosk's own navigation
-  does. The layered "tap for context, tap again to dig in" behaviour is
-  Phase 6 — the wrapper page, not a Kiosk setting.
-- **Recovery.** If the Synology is down or Kiosk is restarting, Edge shows a
-  connection error full-screen. A small retry page pointed at Kiosk would be
-  friendlier, and belongs with the Phase 6 wrapper.
+- **HTTPS.** Everything here is plain HTTP on the LAN, which is why a browser
+  wake lock is unavailable. Behind a reverse proxy with a certificate the page
+  could hold one itself, and step 3 would become belt-and-braces.
+- **Touch handoff.** The wall shows the photo, the time and the place. The
+  layered "tap for context, tap again to dig in" behaviour is still to build —
+  but the page is ours now, so it is a matter of adding it rather than working
+  around Kiosk.
+- **Recovery.** The wall page keeps showing the last loaded photos when the
+  server goes away, and only falls back to a "cannot reach the server" panel
+  if it has nothing at all. Edge still shows its own connection error if the
+  container is down when the browser first opens.

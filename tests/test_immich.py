@@ -363,3 +363,31 @@ def test_assets_without_a_visibility_field_are_kept(server):
     Stub.include_hidden = False
     cfg = ApiConfig(base_url=server, key="test-key", page_size=3)
     assert len(list(ImmichClient(cfg).iter_assets())) == 6
+
+
+def test_api_key_can_come_from_a_file(tmp_path, monkeypatch):
+    """Docker secrets are files. Reading the file in load_config means every
+    entry point gets the key — the wall server bypasses the shell wrapper that
+    used to do this, and would otherwise have started with no credentials."""
+    import tripcluster.config as config
+    keyfile = tmp_path / "key"
+    keyfile.write_text("secret-value\n")          # trailing newline on purpose
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text("home:\n  lat: 1.0\n  lon: 2.0\n")
+
+    monkeypatch.delenv("IMMICH_API_KEY", raising=False)
+    monkeypatch.setenv("IMMICH_API_KEY_FILE", str(keyfile))
+    cfg = config.load_config(cfg_path)
+    # Stripped: Immich sends the key verbatim as a header and rejects a newline.
+    assert cfg.api.key == "secret-value"
+
+
+def test_an_explicit_env_key_wins_over_the_file(tmp_path, monkeypatch):
+    import tripcluster.config as config
+    keyfile = tmp_path / "key"
+    keyfile.write_text("from-file")
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text("home:\n  lat: 1.0\n  lon: 2.0\n")
+    monkeypatch.setenv("IMMICH_API_KEY", "from-env")
+    monkeypatch.setenv("IMMICH_API_KEY_FILE", str(keyfile))
+    assert config.load_config(cfg_path).api.key == "from-env"

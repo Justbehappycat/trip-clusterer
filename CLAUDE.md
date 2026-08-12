@@ -27,9 +27,9 @@ Mini's role; `deploy/tripcluster/` replaces it.
 | 1 — Immich on the Synology | **done** — v3.1.0 |
 | 2 — Photo import, GPS verified | **done** — 17,283 timeline assets, 8,486 with GPS (~51%) |
 | 3 — Trip clusterer | **applied** — 16 albums created in Immich, 8 labelled road trips |
-| 4 — immich-kiosk slideshow | **running** on the Synology, port 3000, Kiosk 0.42.0 — verified serving real photos from the Views album |
+| 4 — slideshow | **replaced by the wall** — `tools/wall_server.py` on :4000. Kiosk 0.42.0 ran on :3000 and works, but has no clock positioning |
 | 5 — Windows kiosk hardening | **written, untested** — `deploy/phase-5-windows-kiosk.md` |
-| 6 — Touch handoff wrapper page | not started — `tools/make_map.py` is the start of it |
+| 6 — Touch handoff | page is ours now (`tools/wall_page.html`); touch layers still to build. `tools/make_map.py` is the start of the deeper view |
 | Upkeep — weekly re-cluster | **written, not deployed** — `deploy/tripcluster/` |
 | Upkeep — weekly score export | **written, not deployed** — `deploy/mac/` |
 

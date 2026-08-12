@@ -1,0 +1,161 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Photo wall</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{height:100%;background:#000;overflow:hidden;color:#f7f7f5;
+    font:400 16px/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Display",
+      "Segoe UI",system-ui,sans-serif;-webkit-font-smoothing:antialiased;
+    -webkit-user-select:none;user-select:none;cursor:none}
+
+  #stage{position:fixed;inset:0}
+  #stage img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
+    opacity:0;transition:opacity 1.8s ease}
+  #stage img.on{opacity:1}
+
+  /* Scrims top and bottom, each tied to the brightness measured at that end.
+     Applied only where earned — a dark foreground gets nothing. */
+  .scrim{position:absolute;left:0;right:0;height:34%;opacity:0;
+    transition:opacity 1s ease;pointer-events:none}
+  #scrimTop{top:0;background:linear-gradient(to bottom,rgba(0,0,0,.45),transparent)}
+  #scrimBottom{bottom:0;background:linear-gradient(to top,rgba(0,0,0,.4),transparent)}
+  body.brightTop #scrimTop{opacity:1}
+  body.brightBottom #scrimBottom{opacity:1}
+
+  /* Two shadows, not one: a tight dark edge for contrast against sky, a wide
+     soft one to lift the glyph off detail. Off-white, because pure white
+     blooms on a bright sky and reads as glare. */
+  .lit{text-shadow:0 1px 2px rgba(0,0,0,.45), 0 2px 28px rgba(0,0,0,.35)}
+  body.brightTop #clock,
+  body.brightBottom #place{text-shadow:0 1px 3px rgba(0,0,0,.75),
+    0 2px 34px rgba(0,0,0,.6)}
+
+  #layer{position:absolute;inset:0;padding:5vmin;display:flex;
+    flex-direction:column;align-items:center;justify-content:space-between;
+    pointer-events:none}
+  #clock{text-align:center;margin-top:2vmin}
+  #time{font-size:16vmin;font-weight:200;letter-spacing:-.045em;line-height:1;
+    font-variant-numeric:tabular-nums}
+  #date{font-size:2.1vmin;font-weight:500;letter-spacing:.16em;
+    text-transform:uppercase;opacity:.82;margin-top:.6vmin}
+  #place{font-size:1.7vmin;font-weight:500;letter-spacing:.18em;
+    text-transform:uppercase;opacity:.75;text-align:center}
+
+  /* Shown only when the server cannot be reached. A blank wall gives no clue
+     where to look; this says which box to check. */
+  #trouble{position:fixed;inset:0;display:none;place-items:center;
+    background:#000;text-align:center;padding:8vmin}
+  body.offline #trouble{display:grid}
+  #trouble p{font-size:2.2vmin;opacity:.7;line-height:1.8}
+  #trouble b{font-weight:600;opacity:1}
+</style>
+
+<div id="stage"></div>
+<div class="scrim" id="scrimTop"></div>
+<div class="scrim" id="scrimBottom"></div>
+
+<div id="layer">
+  <div id="clock" class="lit">
+    <div id="time"></div>
+    <div id="date"></div>
+  </div>
+  <div id="place" class="lit"></div>
+</div>
+
+<div id="trouble">
+  <p><b>Waiting for the photo wall</b><br>
+  Cannot reach the server on the Synology.<br>
+  Check the <b>wall</b> container, and that Immich is running.</p>
+</div>
+
+<script>
+"use strict";
+const HOLD_MS = 120000;        // how long each photo stays
+const RELOAD_MS = 900000;      // re-read the album list
+const stage = document.getElementById("stage");
+
+let slides = [], threshold = 0.55, order = [], cursor = 0, showing = null;
+
+function tick() {
+  const d = new Date(), h = d.getHours() % 12 || 12;
+  document.getElementById("time").textContent =
+    h + ":" + String(d.getMinutes()).padStart(2, "0");
+  document.getElementById("date").textContent =
+    d.toLocaleDateString(undefined, {weekday:"long", month:"long", day:"numeric"});
+}
+setInterval(tick, 1000); tick();
+
+// Shuffle once per pass rather than picking at random each time: random
+// picking repeats photos while others go unseen for days.
+function reshuffle() {
+  order = slides.map((_, i) => i);
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+  cursor = 0;
+}
+
+async function load() {
+  try {
+    const r = await fetch("/api/slides", {cache: "no-store"});
+    if (!r.ok) throw new Error(r.status);
+    const data = await r.json();
+    if (data.slides && data.slides.length) {
+      slides = data.slides;
+      threshold = data.threshold ?? threshold;
+      reshuffle();
+      document.body.classList.remove("offline");
+    }
+  } catch (e) {
+    // Only complain if there is nothing to show. A failed refresh while
+    // slides are already loaded should be invisible.
+    if (!slides.length) document.body.classList.add("offline");
+  }
+}
+
+function show() {
+  if (!slides.length) return;
+  if (cursor >= order.length) reshuffle();
+  const s = slides[order[cursor++]];
+
+  const img = new Image();
+  img.src = "/img/" + s.id;
+  img.decoding = "async";
+  img.onload = () => {
+    stage.appendChild(img);
+    requestAnimationFrame(() => img.classList.add("on"));
+    if (showing) {
+      const old = showing;
+      old.classList.remove("on");
+      setTimeout(() => old.remove(), 2000);
+    }
+    showing = img;
+
+    // Either failure mode earns the heavier treatment: a bright sky washes
+    // text out, a cluttered region swallows it. Missing data (a photo not yet
+    // warmed) is treated as needing help — better a scrim that was not
+    // required than an unreadable clock on its first showing.
+    const b = s.bright || {};
+    const hard = (lum, det) =>
+      lum === undefined ? true : (lum > threshold || (det ?? 0) > threshold);
+    document.body.classList.toggle("brightTop",
+      hard(b.topCenter, b.topCenterDetail));
+    document.body.classList.toggle("brightBottom",
+      hard(b.bottomCenter, b.bottomCenterDetail));
+
+    document.getElementById("place").textContent =
+      [s.where, s.region].filter(Boolean).join(" · ");
+  };
+  // A photo that fails to load must not stall the wall.
+  img.onerror = () => setTimeout(show, 2000);
+}
+
+(async function start() {
+  await load();
+  show();
+  setInterval(show, HOLD_MS);
+  setInterval(load, RELOAD_MS);
+})();
+</script>
