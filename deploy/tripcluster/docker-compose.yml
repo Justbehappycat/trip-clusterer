@@ -1,0 +1,61 @@
+# Weekly trip clustering on the Synology. Replaces the Mac Mini LaunchAgent —
+# the Mini is no longer in the architecture.
+#
+# Set up, once, over SSH:
+#
+#     mkdir -p /volume1/docker/tripcluster
+#     chmod 700 /volume1/docker/tripcluster
+#     # config.yaml with your homes: block, and api.base_url pointing at Immich
+#     cp config.yaml /volume1/docker/tripcluster/config.yaml
+#     # trips.db from the Mac — it holds the album ids. Without it the first
+#     # run creates a duplicate set of albums.
+#     cp trips.db /volume1/docker/tripcluster/trips.db
+#     # 644, not 600: the container runs as a non-root user (see the kiosk
+#     # compose for the same trap).
+#     printf '%s' 'PASTE_KEY_HERE' > /volume1/docker/tripcluster/immich_api_key
+#     chmod 644 /volume1/docker/tripcluster/immich_api_key
+#
+# Then build from the repo root, so the Dockerfile can see tripcluster/ etc:
+#
+#     docker compose -f deploy/tripcluster/docker-compose.yml up -d --build
+#
+# Check it: `docker logs -f tripcluster` should show a clustering pass
+# immediately, then "sleeping 604800s".
+
+services:
+  tripcluster:
+    build:
+      # Repo root, because the Dockerfile copies tripcluster/, tools/ and
+      # mapdata/ — a context of this directory would not contain them.
+      context: ../..
+      dockerfile: deploy/tripcluster/Dockerfile
+    container_name: tripcluster
+    restart: unless-stopped
+    environment:
+      TZ: "America/Los_Angeles"
+      CONFIG_PATH: /config/config.yaml
+      IMMICH_API_KEY_FILE: /run/secrets/immich_api_key
+      # Weekly. The loop runs once at start, so restarting the container is
+      # also how you force a pass.
+      RUN_INTERVAL_SECONDS: "604800"
+    secrets:
+      - immich_api_key
+    volumes:
+      # config.yaml read-only; it is yours to edit, not the container's.
+      - /volume1/docker/tripcluster/config.yaml:/config/config.yaml:ro
+      # trips.db must be writable and must persist. It maps trips to album ids
+      # and holds any custom_name you have typed; losing it means duplicate
+      # albums on the next run.
+      - /volume1/docker/tripcluster:/state
+    working_dir: /app
+    # IMPORTANT: set this in the mounted config.yaml —
+    #
+    #     state_db: /state/trips.db
+    #
+    # A relative `state_db: trips.db` resolves against the config file's own
+    # directory, which here is /config — and only config.yaml is mounted
+    # there, so the write fails. It must be the absolute /state path.
+
+secrets:
+  immich_api_key:
+    file: /volume1/docker/tripcluster/immich_api_key

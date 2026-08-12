@@ -12,11 +12,12 @@ file is the state of the build.
 
 ## Where the build stands
 
-**Immich runs on the Synology at `192.168.1.218:2283`, not the Mac Mini.** The
-plan's "Mac Mini runs Immich + a slideshow renderer" is superseded. The Mini's
-remaining role is undecided — immich-kiosk is itself a container and could sit
-next to Immich on the Synology, in which case the Mini is not in the
-architecture at all.
+**Everything server-side runs on the Synology at `192.168.1.218`. The Mac Mini
+is out of the architecture entirely** — the plan's "Mac Mini runs Immich + a
+slideshow renderer" is superseded. Immich on :2283, immich-kiosk on :3000, and
+the weekly clustering job all run there as containers; the Cubi is a display
+and nothing else. `launchd/com.tripcluster.weekly.plist` was deleted with the
+Mini's role; `deploy/tripcluster/` replaces it.
 
 | Phase | Status |
 |---|---|
@@ -25,7 +26,8 @@ architecture at all.
 | 3 — Trip clusterer | **applied** — 16 albums created in Immich, 8 labelled road trips |
 | 4 — immich-kiosk slideshow | **running** on the Synology, port 3000, Kiosk 0.42.0 — verified serving real photos from the Views album |
 | 5 — Windows kiosk hardening | **written, untested** — `deploy/phase-5-windows-kiosk.md` |
-| 6 — Touch handoff wrapper page | not started |
+| 6 — Touch handoff wrapper page | not started — `tools/make_map.py` is the start of it |
+| Upkeep — weekly re-cluster | **written, not deployed** — `deploy/tripcluster/` |
 
 Phase 3 was developed on a MacBook Pro. The **endpoint paths are now confirmed
 against the live 3.1.0 instance** — all four exist. `parse_asset`'s response
