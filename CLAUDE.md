@@ -143,10 +143,15 @@ gave 46 false flight legs, because no fixture contained interstate driving.
 - **A curated `Views` album feeds the wall, not the trip albums.** Album
   `ce8df127-f644-459a-b39a-5cc41c8d3a75`, built by
   `tools/build_views_album.py`: 722 landscape stills from trip photos with no
-  detected face. The trip albums answer "where did I go"; a wall needs "is
-  this worth looking at from across the room". 65% of the library is portrait
-  and would pillarbox on the landscape screen, which is the biggest single
-  filter. Rebuild the album after new trips land.
+  detected face, **shot on a camera**. The trip albums answer "where did I
+  go"; a wall needs "is this worth looking at from across the room". 65% of
+  the library is portrait and would pillarbox on the landscape screen, the
+  biggest single filter. The camera check matters as much: a screenshot taken
+  mid-trip gets a position from `interpolate_missing_gps` and so becomes a
+  trip photo — correct for "what happened on this trip", wrong for a wall.
+  Without it 71 of the first 722 were screenshots and saved images. The tool
+  *syncs* membership rather than appending, so a filter fix can clean up what
+  an earlier run put on the wall.
 - **Stops are named for the nearest *major* city, when there is one close.**
   GeoNames' cities1000 list — which `reverse_geocoder` and Immich both derive
   from — names a point by the nearest populated place, and in dense countries

@@ -86,8 +86,20 @@ def main() -> int:
         return 1
 
     def keep(it: dict) -> tuple[bool, str]:
+        ex = it.get("exifInfo") or {}
         if (it.get("type") or "IMAGE") != "IMAGE":
             return False, "not a still"
+        # No camera make means it did not come out of a camera: screenshots,
+        # saved images, downloads. They reach the trip albums legitimately —
+        # interpolate_missing_gps gives a screenshot taken mid-trip a position
+        # from its neighbours, which is right for "what happened on this trip"
+        # and wrong for a wall. 71 of the first 722 were these.
+        if not (ex.get("make") or "").strip():
+            return False, "not from a camera"
+        # An interpolated position is a guess. For the wall we want photos
+        # whose location is actually known.
+        if ex.get("latitude") is None:
+            return False, "no real GPS"
         if it.get("people"):
             return False, "has a face"
         w, h = it.get("width") or 0, it.get("height") or 0
@@ -141,8 +153,36 @@ def main() -> int:
         None,
     )
     if existing:
-        client.add_assets(existing["id"], ids)
-        print(f"\nupdated album {existing['id']} (+{len(ids)} sent; duplicates ignored)")
+        # Sync, not append. The album is a curated selection, so anything that
+        # no longer qualifies has to come out — otherwise a filter fix can
+        # never clean up what an earlier run put on the wall.
+        current = set()
+        page = 1
+        while True:
+            r = client._request("POST", cfg.api.search_assets, json={
+                "albumIds": [existing["id"]], "page": page, "size": 1000,
+                "withExif": True, "withPeople": True,
+            })
+            a = (r.get("assets") or {})
+            got = a.get("items") or []
+            if not got:
+                break
+            current.update(i["id"] for i in got)
+            nxt = a.get("nextPage")
+            if not nxt:
+                break
+            page = int(nxt)
+
+        want = set(ids)
+        stale = sorted(current - want)
+        missing = [i for i in ids if i not in current]
+        if stale:
+            client.remove_assets(existing["id"], stale)
+        if missing:
+            client.add_assets(existing["id"], missing)
+        print(f"\nsynced album {existing['id']}: "
+              f"-{len(stale)} removed, +{len(missing)} added, "
+              f"{len(want)} on the wall")
     else:
         album_id = client.create_album(
             args.album_name,

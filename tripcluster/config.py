@@ -84,6 +84,9 @@ class ApiConfig:
     create_album: str = "/api/albums"
     update_album: str = "/api/albums/{id}"
     add_album_assets: str = "/api/albums/{id}/assets"
+    # Same path, DELETE. Needed to *remove* assets that no longer qualify —
+    # without it a curated album can only ever grow.
+    remove_album_assets: str = "/api/albums/{id}/assets"
     openapi_spec: str = "/api/specs-json"
 
 

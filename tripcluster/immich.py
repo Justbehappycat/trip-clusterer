@@ -230,6 +230,27 @@ class ImmichClient:
             self.add_assets(album_id, asset_ids[1000:])
         return album_id
 
+    def remove_assets(self, album_id: str, asset_ids: list[str]) -> int:
+        """Take assets back out of an album. The photos themselves are untouched.
+
+        A curated album needs this: without it the selection can only grow, so
+        anything that stops qualifying — or that should never have qualified —
+        stays on the wall forever.
+        """
+        removed = 0
+        for chunk in _chunks(asset_ids, 500):
+            result = self._request(
+                "DELETE",
+                self.cfg.remove_album_assets,
+                fmt={"id": album_id},
+                json={"ids": chunk},
+            )
+            if isinstance(result, list):
+                removed += sum(1 for r in result if r.get("success"))
+            else:
+                removed += len(chunk)
+        return removed
+
     def add_assets(self, album_id: str, asset_ids: list[str]) -> int:
         added = 0
         for chunk in _chunks(asset_ids, 500):
