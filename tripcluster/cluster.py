@@ -98,8 +98,16 @@ def cluster_stops(trip: Trip, th: Thresholds) -> list[Stop]:
         if not cur_ids:
             return
         lat, lon = cur_centroid if cur_centroid else (0.0, 0.0)
+        # Boundary points come from measured fixes only — an interpolated
+        # coordinate is a guess, and guessing where a drive started is how
+        # phantom speeds appear.
+        first = cur_points[0] if cur_points else (lat, lon)
+        last = cur_points[-1] if cur_points else (lat, lon)
         stops.append(
-            Stop(lat=lat, lon=lon, start_utc=cur_start, end_utc=cur_end, asset_ids=list(cur_ids))
+            Stop(lat=lat, lon=lon, start_utc=cur_start, end_utc=cur_end,
+                 asset_ids=list(cur_ids),
+                 start_lat=first[0], start_lon=first[1],
+                 end_lat=last[0], end_lon=last[1])
         )
 
     for a in trip.assets:
@@ -167,7 +175,12 @@ def classify_legs(stops: list[Stop], th: Thresholds) -> list[Leg]:
     """
     legs: list[Leg] = []
     for cur, nxt in zip(stops, stops[1:]):
-        dist = haversine_km(cur.lat, cur.lon, nxt.lat, nxt.lon)
+        # Measured between the photos that bracket the travel, not between
+        # stop centroids: elapsed time comes from those same two photos, and
+        # pairing centroid distance with photo timing manufactures impossible
+        # speeds on short legs.
+        (from_lat, from_lon), (to_lat, to_lon) = cur.end_point, nxt.start_point
+        dist = haversine_km(from_lat, from_lon, to_lat, to_lon)
         # Time between leaving one stop and arriving at the next. Dwell time is
         # absorbed by the stops themselves, so this is mostly travel.
         elapsed = max(nxt.start_utc - cur.end_utc, 0) / 3600.0

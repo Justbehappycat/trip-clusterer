@@ -103,6 +103,15 @@ The margin against real drives is thin and worth respecting:
 `test_a_hard_but_real_drive_is_not_called_a_flight` (900 km in 9 h, 125 km/h on
 road) is what breaks first if anyone lowers the ceiling or raises circuity.
 
+**Legs are measured between boundary photos, not stop centroids.** The
+centroid answers "where is this stop" — right for naming and map pins, wrong
+for measuring travel. A stop may span `stop_radius_km`, so two centroids can
+sit 90 km apart while the photos bracketing the drive between them are minutes
+and 15 km apart. Pairing centroid distance with photo timing manufactured
+impossible speeds on exactly the short interstate legs inside real road trips;
+`Stop.start_point`/`end_point` fix it, falling back to the centroid when a stop
+has no measured fixes.
+
 Route evidence, which this note once called for, does not apply. An en-route
 photo doesn't sit *inside* a leg: `cluster_stops` files every GPS-fixed photo
 into a stop, so an intermediate photo **splits the leg in two**. A drive with

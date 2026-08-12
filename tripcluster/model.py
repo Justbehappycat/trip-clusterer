@@ -72,6 +72,31 @@ class Stop:
     asset_ids: list[str] = field(default_factory=list)
     place: str | None = None         # filled by reverse geocoding
 
+    # Where the first and last measured photos of this stop actually were.
+    # The centroid answers "where is this stop" — right for naming and for a
+    # map pin. It is wrong for measuring travel: a stop may span
+    # stop_radius_km, so two centroids can sit 100 km apart while the photos
+    # bracketing the drive between them are minutes and a few km apart. Timing
+    # is taken from those boundary photos, so distance must be too.
+    start_lat: float | None = None
+    start_lon: float | None = None
+    end_lat: float | None = None
+    end_lon: float | None = None
+
+    @property
+    def start_point(self) -> tuple[float, float]:
+        """Where this stop was entered; the centroid if nothing better is known."""
+        if self.start_lat is None or self.start_lon is None:
+            return (self.lat, self.lon)
+        return (self.start_lat, self.start_lon)
+
+    @property
+    def end_point(self) -> tuple[float, float]:
+        """Where this stop was left from."""
+        if self.end_lat is None or self.end_lon is None:
+            return (self.lat, self.lon)
+        return (self.end_lat, self.end_lon)
+
     @property
     def photo_count(self) -> int:
         return len(self.asset_ids)

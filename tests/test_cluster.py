@@ -21,7 +21,7 @@ from tripcluster.config import Thresholds  # noqa: E402
 from tripcluster.geo import (  # noqa: E402
     centroid, drop_impossible_fixes, haversine_km, interpolate_missing_gps,
 )
-from tripcluster.model import Asset, Home, Trip  # noqa: E402
+from tripcluster.model import Asset, Home, Stop, Trip  # noqa: E402
 from tripcluster.naming import describe, heuristic_name  # noqa: E402
 from tripcluster.store import Store  # noqa: E402
 
@@ -270,6 +270,45 @@ def test_bare_coordinates_still_work():
     assert segment_trips(away, HOME, TH)
     assert segment_trips(away, Home(lat=HOME[0], lon=HOME[1]), TH)
     assert segment_trips(away, [Home(lat=HOME[0], lon=HOME[1])], TH)
+
+
+def test_legs_are_measured_between_boundary_photos_not_centroids():
+    """A wide stop must not manufacture distance the traveller never covered.
+
+    Both stops here sprawl ~90 km east-west, but the photo leaving the first
+    and the photo arriving at the second are close together — the drive
+    between them is short. Centroid-to-centroid measurement invented ~90 km of
+    travel in the ten minutes between those photos, which then read as
+    impossible for a car and turned interstate legs inside real road trips
+    into flights.
+    """
+    base = ts(2023, 6, 1, 8)
+    # Stop A sits around -112.0 but its last photo is 38 km east of its own
+    # centroid; stop B's first photo is 15 km further on, and B's mass then
+    # pulls its centroid a long way east. The two centroids end up ~89 km
+    # apart while the photos bracketing the drive are ~15 km apart.
+    a = [Asset(id=f"a{i}", ts_utc=base + i * 1800, lat=40.0, lon=-112.0)
+         for i in range(6)]
+    a.append(Asset(id="a-last", ts_utc=base + 6 * 1800, lat=40.0, lon=-111.47))
+    b = [Asset(id="b-first", ts_utc=base + 6 * 1800 + 600, lat=40.0, lon=-111.29)]
+    b += [Asset(id=f"b{i}", ts_utc=base + 7 * 1800 + i * 1800, lat=40.0, lon=-110.8)
+          for i in range(6)]
+    trip = Trip(assets=a + b)
+    trip.stops = cluster_stops(trip, TH)
+    assert len(trip.stops) == 2
+
+    leg = classify_legs(trip.stops, TH)[0]
+    centroid_km = haversine_km(trip.stops[0].lat, trip.stops[0].lon,
+                               trip.stops[1].lat, trip.stops[1].lon)
+    assert leg.distance_km < centroid_km, "centroids overstate the travel"
+    assert leg.kind != "flight"
+
+
+def test_boundary_points_fall_back_to_the_centroid():
+    """A Stop built without boundary points still measures — find_home does this."""
+    s = Stop(lat=10.0, lon=20.0, start_utc=0, end_utc=1)
+    assert s.start_point == (10.0, 20.0)
+    assert s.end_point == (10.0, 20.0)
 
 
 # ---- leg + trip classification -------------------------------------------
